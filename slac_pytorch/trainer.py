@@ -81,7 +81,7 @@ class Trainer:
 
         # Other parameters.
         self.action_repeat = self.env.action_repeat
-        self.num_steps = args.num_steps
+        self.num_steps = int(args.num_steps)
         self.initial_collection_steps = int(args.initial_collection_steps)
         self.initial_learning_steps = int(args.initial_learning_steps)
         self.eval_interval = int(args.eval_interval)
