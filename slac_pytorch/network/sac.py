@@ -1,8 +1,8 @@
 import torch
 from torch import nn
 
-from slac.network.initializer import initialize_weight
-from slac.utils import build_mlp, reparameterize
+from slac_pytorch.network.initializer import initialize_weight
+from slac_pytorch.utils import build_mlp, reparameterize
 
 
 class GaussianPolicy(torch.jit.ScriptModule):

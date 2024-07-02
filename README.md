@@ -7,7 +7,9 @@ A PyTorch implementation of Stochastic Latent Actor-Critic[[1]](#references) for
 - 2020.10.26
     - Refactor codes and speed up training.
 - 2020.8.28
-    - Bump torch up to 1.6.0.
+    - Bump torch up to `1.6.0`.
+- 2024.7.01
+    - Update `gym` to `gymnasium`
 
 ## Requirements
 You can install Python liblaries using `pip install -r requirements.txt`. Note that you need a MuJoCo license. Please follow the instruction in [mujoco-py](https://github.com/openai/mujoco-py) for help.

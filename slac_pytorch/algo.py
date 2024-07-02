@@ -4,9 +4,9 @@ import numpy as np
 import torch
 from torch.optim import Adam
 
-from slac.buffer import ReplayBuffer
-from slac.network import GaussianPolicy, LatentModel, TwinnedQNetwork
-from slac.utils import create_feature_actions, grad_false, soft_update
+from slac_pytorch.buffer import ReplayBuffer
+from slac_pytorch.network import GaussianPolicy, LatentModel, TwinnedQNetwork
+from slac_pytorch.utils import create_feature_actions, grad_false, soft_update
 
 
 class SlacAlgorithm:
@@ -22,32 +22,21 @@ class SlacAlgorithm:
         action_shape,
         action_repeat,
         device,
-        seed,
-        gamma=0.99,
-        batch_size_sac=256,
-        batch_size_latent=32,
-        buffer_size=10 ** 5,
-        num_sequences=8,
-        lr_sac=3e-4,
-        lr_latent=1e-4,
-        feature_dim=256,
-        z1_dim=32,
-        z2_dim=256,
-        hidden_units=(256, 256),
-        tau=5e-3,
+        args
     ):
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        torch.cuda.manual_seed(seed)
+        assert args is not None, "No configuration settings"
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        torch.cuda.manual_seed(args.seed)
 
         # Replay buffer.
-        self.buffer = ReplayBuffer(buffer_size, num_sequences, state_shape, action_shape, device)
+        self.buffer = ReplayBuffer(args.buffer_size, args.num_sequences, state_shape, action_shape, device)
 
         # Networks.
-        self.actor = GaussianPolicy(action_shape, num_sequences, feature_dim, hidden_units).to(device)
-        self.critic = TwinnedQNetwork(action_shape, z1_dim, z2_dim, hidden_units).to(device)
-        self.critic_target = TwinnedQNetwork(action_shape, z1_dim, z2_dim, hidden_units).to(device)
-        self.latent = LatentModel(state_shape, action_shape, feature_dim, z1_dim, z2_dim, hidden_units).to(device)
+        self.actor = GaussianPolicy(action_shape, args.num_sequences, args.feature_dim, args.hidden_units).to(device)
+        self.critic = TwinnedQNetwork(action_shape, args.z1_dim, args.z2_dim, args.hidden_units).to(device)
+        self.critic_target = TwinnedQNetwork(action_shape, args.z1_dim, args.z2_dim, args.hidden_units).to(device)
+        self.latent = LatentModel(state_shape, action_shape, args.feature_dim, args.z1_dim, args.z2_dim, args.hidden_units).to(device)
         soft_update(self.critic_target, self.critic, 1.0)
         grad_false(self.critic_target)
 
@@ -59,10 +48,10 @@ class SlacAlgorithm:
             self.alpha = self.log_alpha.exp()
 
         # Optimizers.
-        self.optim_actor = Adam(self.actor.parameters(), lr=lr_sac)
-        self.optim_critic = Adam(self.critic.parameters(), lr=lr_sac)
-        self.optim_alpha = Adam([self.log_alpha], lr=lr_sac)
-        self.optim_latent = Adam(self.latent.parameters(), lr=lr_latent)
+        self.optim_actor = Adam(self.actor.parameters(), lr=args.lr_sac)
+        self.optim_critic = Adam(self.critic.parameters(), lr=args.lr_sac)
+        self.optim_alpha = Adam([self.log_alpha], lr=args.lr_sac)
+        self.optim_latent = Adam(self.latent.parameters(), lr=args.lr_latent)
 
         self.learning_steps_sac = 0
         self.learning_steps_latent = 0
@@ -70,15 +59,15 @@ class SlacAlgorithm:
         self.action_shape = action_shape
         self.action_repeat = action_repeat
         self.device = device
-        self.gamma = gamma
-        self.batch_size_sac = batch_size_sac
-        self.batch_size_latent = batch_size_latent
-        self.num_sequences = num_sequences
-        self.tau = tau
+        self.gamma = args.gamma
+        self.batch_size_sac = args.batch_size_sac
+        self.batch_size_latent = args.batch_size_latent
+        self.num_sequences = args.num_sequences
+        self.tau = args.tau
 
         # JIT compile to speed up.
-        fake_feature = torch.empty(1, num_sequences + 1, feature_dim, device=device)
-        fake_action = torch.empty(1, num_sequences, action_shape[0], device=device)
+        fake_feature = torch.empty(1, args.num_sequences + 1, args.feature_dim, device=device)
+        fake_action = torch.empty(1, args.num_sequences, action_shape[0], device=device)
         self.create_feature_actions = torch.jit.trace(create_feature_actions, (fake_feature, fake_action))
 
     def preprocess(self, ob):
@@ -108,8 +97,7 @@ class SlacAlgorithm:
             action = env.action_space.sample()
         else:
             action = self.explore(ob)
-
-        state, reward, done, _ = env.step(action)
+        state, reward, done, truncated, infos = env.step(action)
         mask = False if t == env._max_episode_steps else done
         ob.append(state, action)
         self.buffer.append(action, reward, mask, state, done)

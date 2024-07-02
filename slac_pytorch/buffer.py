@@ -76,20 +76,20 @@ class ReplayBuffer:
     def __init__(self, buffer_size, num_sequences, state_shape, action_shape, device):
         self._n = 0
         self._p = 0
-        self.buffer_size = buffer_size
-        self.num_sequences = num_sequences
+        self.buffer_size = int(buffer_size)
+        self.num_sequences = int(num_sequences)
         self.state_shape = state_shape
         self.action_shape = action_shape
         self.device = device
 
         # Store the sequence of images as a list of LazyFrames on CPU. It can store images with 9 times less memory.
-        self.state_ = [None] * buffer_size
+        self.state_ = [None] * self.buffer_size
         # Store other data on GPU to reduce workloads.
-        self.action_ = torch.empty(buffer_size, num_sequences, *action_shape, device=device)
-        self.reward_ = torch.empty(buffer_size, num_sequences, 1, device=device)
-        self.done_ = torch.empty(buffer_size, num_sequences, 1, device=device)
+        self.action_ = torch.empty(self.buffer_size, self.num_sequences, *action_shape, device=device)
+        self.reward_ = torch.empty(self.buffer_size, self.num_sequences, 1, device=device)
+        self.done_ = torch.empty(self.buffer_size, self.num_sequences, 1, device=device)
         # Buffer to store a sequence of trajectories.
-        self.buff = SequenceBuffer(num_sequences=num_sequences)
+        self.buff = SequenceBuffer(num_sequences=self.num_sequences)
 
     def reset_episode(self, state):
         """
@@ -113,9 +113,9 @@ class ReplayBuffer:
 
     def _append(self, state_, action_, reward_, done_):
         self.state_[self._p] = state_
-        self.action_[self._p].copy_(torch.from_numpy(action_))
-        self.reward_[self._p].copy_(torch.from_numpy(reward_))
-        self.done_[self._p].copy_(torch.from_numpy(done_))
+        self.action_[self._p].copy_(torch.as_tensor(action_, dtype=torch.float32))
+        self.reward_[self._p].copy_(torch.as_tensor(reward_, dtype=torch.float32))
+        self.done_[self._p].copy_(torch.as_tensor(done_, dtype=torch.float32))
 
         self._n = min(self._n + 1, self.buffer_size)
         self._p = (self._p + 1) % self.buffer_size

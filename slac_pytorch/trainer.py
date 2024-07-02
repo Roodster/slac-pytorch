@@ -51,25 +51,20 @@ class Trainer:
         env_test,
         algo,
         log_dir,
-        seed=0,
-        num_steps=3 * 10 ** 6,
-        initial_collection_steps=10 ** 4,
-        initial_learning_steps=10 ** 5,
-        num_sequences=8,
-        eval_interval=10 ** 4,
-        num_eval_episodes=5,
+        args=None,
     ):
+        assert args is not None
         # Env to collect samples.
         self.env = env
-        self.env.seed(seed)
+        self.env.seed(args.seed)
 
         # Env for evaluation.
         self.env_test = env_test
-        self.env_test.seed(2 ** 31 - seed)
+        self.env_test.seed(2 ** 31 - args.seed)
 
         # Observations for training and evaluation.
-        self.ob = SlacObservation(env.observation_space.shape, env.action_space.shape, num_sequences)
-        self.ob_test = SlacObservation(env.observation_space.shape, env.action_space.shape, num_sequences)
+        self.ob = SlacObservation(env.observation_space.shape, env.action_space.shape, args.num_sequences)
+        self.ob_test = SlacObservation(env.observation_space.shape, env.action_space.shape, args.num_sequences)
 
         # Algorithm to learn.
         self.algo = algo
@@ -86,11 +81,11 @@ class Trainer:
 
         # Other parameters.
         self.action_repeat = self.env.action_repeat
-        self.num_steps = num_steps
-        self.initial_collection_steps = initial_collection_steps
-        self.initial_learning_steps = initial_learning_steps
-        self.eval_interval = eval_interval
-        self.num_eval_episodes = num_eval_episodes
+        self.num_steps = args.num_steps
+        self.initial_collection_steps = int(args.initial_collection_steps)
+        self.initial_learning_steps = int(args.initial_learning_steps)
+        self.eval_interval = int(args.eval_interval)
+        self.num_eval_episodes = int(args.eval_num_episodes)
 
     def train(self):
         # Time to start training.
@@ -103,7 +98,9 @@ class Trainer:
         self.algo.buffer.reset_episode(state)
 
         # Collect trajectories using random policy.
-        for step in range(1, self.initial_collection_steps + 1):
+        bar = tqdm(range(1, self.initial_collection_steps + 1))
+        for step in bar:
+            bar.set_description("Collecting trajectories using random policy.")
             t = self.algo.step(self.env, self.ob, t, step <= self.initial_collection_steps)
 
         # Update latent variable model first so that SLAC can learn well using (learned) latent dynamics.
@@ -113,7 +110,9 @@ class Trainer:
             self.algo.update_latent(self.writer)
 
         # Iterate collection, update and evaluation.
-        for step in range(self.initial_collection_steps + 1, self.num_steps // self.action_repeat + 1):
+        bar = tqdm(range(self.initial_collection_steps + 1, self.num_steps // self.action_repeat + 1))
+        for step in bar:
+            bar.set_description("Updating SLAC model.")
             t = self.algo.step(self.env, self.ob, t, False)
 
             # Update the algorithm.
