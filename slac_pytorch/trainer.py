@@ -139,7 +139,7 @@ class Trainer:
 
             while not done:
                 action = self.algo.exploit(self.ob_test)
-                state, reward, done, _ = self.env_test.step(action)
+                state, reward, done, truncated, infos = self.env_test.step(action)
                 self.ob_test.append(state, action)
                 episode_return += reward
 
