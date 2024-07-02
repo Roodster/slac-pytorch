@@ -110,9 +110,7 @@ class Trainer:
             self.algo.update_latent(self.writer)
 
         # Iterate collection, update and evaluation.
-        bar = tqdm(range(self.initial_collection_steps + 1, self.num_steps // self.action_repeat + 1))
-        for step in bar:
-            bar.set_description("Updating SLAC model.")
+        for step in range(self.initial_collection_steps + 1, self.num_steps // self.action_repeat + 1):
             t = self.algo.step(self.env, self.ob, t, False)
 
             # Update the algorithm.
