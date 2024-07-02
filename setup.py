@@ -11,6 +11,7 @@ setup(
     keywords='slac disentanglement drl',
     packages=find_packages(),
     install_requires=[
+        'dmc2gym',
         'torch',
         'tensorboard',
         'gymnasium',
