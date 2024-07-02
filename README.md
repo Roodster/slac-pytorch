@@ -32,5 +32,18 @@ Visualization of image sequence corresponding to Figure 9 in the paper is as fol
 
 <img src="https://user-images.githubusercontent.com/37267851/69476615-6802a400-0e1f-11ea-919d-b7958413efab.png" title="sequence" width=750>
 
+
+## Developer instructions
+
+```
+py -m build
+```
+
+
+```
+py -m twine upload --repository testpypi dist/*
+```
+
 ## References
 [[1]](https://arxiv.org/abs/1907.00953) Lee, Alex X., et al. "Stochastic latent actor-critic: Deep reinforcement learning with a latent variable model." arXiv preprint arXiv:1907.00953 (2019).
+

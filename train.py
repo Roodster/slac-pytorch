@@ -55,16 +55,5 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--num_steps", type=int, default=2 * 10 ** 6)
-    parser.add_argument("--domain_name", type=str, default="cheetah")
-    parser.add_argument("--task_name", type=str, default="run")
-    parser.add_argument("--action_repeat", type=int, default=4)
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--cuda", action="store_true")
-    parser.add_argument("--working_dir", type=str, default="./")
-    args = parser.parse_args()
     args = parse_args(args_file="./data/configs/default.json")
-
-
     main(args)
