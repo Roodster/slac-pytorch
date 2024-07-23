@@ -34,9 +34,25 @@ class SlacAlgorithm:
 
         # Networks.
         self.actor = GaussianPolicy(action_shape, args.num_sequences, args.feature_dim, args.hidden_units).to(device)
+        
+        if len(args.actor_path) > 0:
+            self.actor.load_state_dict(torch.load(args.actor_path))
+            
         self.critic = TwinnedQNetwork(action_shape, args.z1_dim, args.z2_dim, args.hidden_units).to(device)
+    
+        if len(args.critic_path) > 0:
+            self.critic.load_state_dict(torch.load(args.critic_path))
+            
         self.critic_target = TwinnedQNetwork(action_shape, args.z1_dim, args.z2_dim, args.hidden_units).to(device)
+    
+        if len(args.critic_path) > 0:
+            self.critic_target.load_state_dict(torch.load(args.critic_path))
+            
         self.latent = LatentModel(state_shape, action_shape, args.feature_dim, args.z1_dim, args.z2_dim, args.hidden_units).to(device)
+        
+        if len(args.latent_path) > 0:
+            self.latent.load_state_dict(torch.load(args.latent_path))
+            
         soft_update(self.critic_target, self.critic, 1.0)
         grad_false(self.critic_target)
 
@@ -195,6 +211,7 @@ class SlacAlgorithm:
             os.makedirs(save_dir)
         # We don't save target network to reduce workloads.
         torch.save(self.latent.encoder.state_dict(), os.path.join(save_dir, "encoder.pth"))
+        torch.save(self.latent.decoder.state_dict(), os.path.join(save_dir, "decoder.pth"))
         torch.save(self.latent.state_dict(), os.path.join(save_dir, "latent.pth"))
         torch.save(self.actor.state_dict(), os.path.join(save_dir, "actor.pth"))
         torch.save(self.critic.state_dict(), os.path.join(save_dir, "critic.pth"))

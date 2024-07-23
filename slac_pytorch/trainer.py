@@ -47,6 +47,7 @@ class Trainer:
 
     def __init__(
         self,
+        envs,
         env,
         env_test,
         algo,
@@ -55,6 +56,10 @@ class Trainer:
     ):
         assert args is not None
         # Env to collect samples.
+        self.envs = envs
+        
+        for env in self.envs:
+            _ = env.reset()
         self.env = env
         self.env.seed(args.seed)
 
@@ -92,8 +97,9 @@ class Trainer:
         self.start_time = time()
         # Episode's timestep.
         t = 0
+        env_id = 0
         # Initialize the environment.
-        state = self.env.reset()
+        state = self.envs[env_id].reset()
         self.ob.reset_episode(state)
         self.algo.buffer.reset_episode(state)
 
@@ -101,7 +107,7 @@ class Trainer:
         bar = tqdm(range(1, self.initial_collection_steps + 1))
         for step in bar:
             bar.set_description("Collecting trajectories using random policy.")
-            t = self.algo.step(self.env, self.ob, t, step <= self.initial_collection_steps)
+            t = self.algo.step(self.envs[env_id], self.ob, t, step <= self.initial_collection_steps)
 
         # Update latent variable model first so that SLAC can learn well using (learned) latent dynamics.
         bar = tqdm(range(self.initial_learning_steps))
@@ -110,8 +116,15 @@ class Trainer:
             self.algo.update_latent(self.writer)
 
         # Iterate collection, update and evaluation.
-        for step in range(self.initial_collection_steps + 1, self.num_steps // self.action_repeat + 1):
-            t = self.algo.step(self.env, self.ob, t, False)
+        bar = tqdm(range(self.initial_collection_steps + 1, self.num_steps // self.action_repeat + 1))
+        for step in bar:
+            
+            if t == 0:
+                env_id = np.random.choice(list(range(len(self.envs)))) - 1
+                
+            t = self.algo.step(self.envs[env_id], self.ob, t, False)
+            
+            # if t is 0 the episode is over and we sample a next environment to simulate in.
 
             # Update the algorithm.
             self.algo.update_latent(self.writer)
@@ -120,7 +133,8 @@ class Trainer:
             # Evaluate regularly.
             step_env = step * self.action_repeat
             if step_env % self.eval_interval == 0:
-                self.evaluate(step_env)
+                mean_return = self.evaluate(step_env)
+                bar.set_description(f"iter={step} mean_return={mean_return}")
                 self.algo.save_model(os.path.join(self.model_dir, f"step{step_env}"))
 
         # Wait for logging to be finished.
@@ -150,7 +164,7 @@ class Trainer:
 
         # Log to TensorBoard.
         self.writer.add_scalar("return/test", mean_return, step_env)
-        print(f"Steps: {step_env:<6}   " f"Return: {mean_return:<5.1f}   " f"Time: {self.time}")
+        return mean_return
 
     @property
     def time(self):
