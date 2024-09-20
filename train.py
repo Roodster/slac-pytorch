@@ -24,7 +24,7 @@ def main(args):
         values = dict(mass=mass, 
                       friction=friction)
         
-        xml.modify(args.agent_path, values=values)
+        xml.modify(input_file=args.agent_path, output_file=args.agent_path ,values=values)
 
         env = make_dmc(
             domain_name=args.domain_name,
@@ -44,7 +44,7 @@ def main(args):
         values = dict(mass=mass, 
                     friction=friction)
         
-        xml.modify(args.agent_path, values=values)
+        xml.modify(input_file=args.agent_path, output_file=args.agent_path ,values=values)
         
         env_test = make_dmc(
             domain_name=args.domain_name,

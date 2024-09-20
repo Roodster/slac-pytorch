@@ -18,6 +18,9 @@ pandas = ">=2.2.1"
 tensorboard= ">=2.15.1"
 torch= ">=2.1.2"
 
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.5"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

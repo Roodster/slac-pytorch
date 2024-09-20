@@ -17,7 +17,7 @@ class XML:
         for elem in tree.iterfind('default/default/geom'):
            print(elem.get('friction'))
 
-    def modify(self, file, values):
+    def modify(self, input_file, output_file, values):
         """
         
         Values must have the format:
@@ -25,11 +25,11 @@ class XML:
         """
         
         
-        tree = ET.parse(file)
+        tree = ET.parse(input_file)
         self.modify_mass(tree, values['mass'])
         self.modify_friction(tree, values['friction'])
         
-        tree.write(file)
+        tree.write(output_file)
 
     def modify_mass(self, tree, value):
         for elem in tree.iterfind('worldbody/body/geom'):
