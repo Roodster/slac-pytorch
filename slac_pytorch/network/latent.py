@@ -73,7 +73,7 @@ class Decoder(torch.jit.ScriptModule):
             # (64, 16, 16) -> (32, 32, 32)
             nn.ConvTranspose2d(64, 32, 3, 2, 1, 1),
             nn.LeakyReLU(0.2, inplace=True),
-            # (32, 32, 32) -> (3, 64, 64)
+            # (32, 32, 32) -> (1, 1, 17)
             nn.ConvTranspose2d(32, output_dim, 5, 2, 2, 1),
             nn.LeakyReLU(0.2, inplace=True),
         ).apply(initialize_weight)
@@ -81,11 +81,14 @@ class Decoder(torch.jit.ScriptModule):
 
     @torch.jit.script_method
     def forward(self, x):
+        # print('decoder input: ', x.shape)
         B, S, latent_dim = x.size()
         x = x.view(B * S, latent_dim, 1, 1)
         x = self.net(x)
         _, C, W, H = x.size()
         x = x.view(B, S, C, W, H)
+        # print('decoder output: ', x.shape)
+
         return x, torch.ones_like(x).mul_(self.std)
 
 
@@ -98,7 +101,7 @@ class Encoder(torch.jit.ScriptModule):
         super(Encoder, self).__init__()
 
         self.net = nn.Sequential(
-            # (3, 64, 64) -> (32, 32, 32)
+            # (1, 1, 17) -> (32, 32, 32)
             nn.Conv2d(input_dim, 32, 5, 2, 2),
             nn.LeakyReLU(0.2, inplace=True),
             # (32, 32, 32) -> (64, 16, 16)
@@ -123,6 +126,86 @@ class Encoder(torch.jit.ScriptModule):
         x = x.view(B, S, -1)
         return x
 
+class ObsDecoder(torch.jit.ScriptModule):
+    """
+    Modified Decoder for (32, 9, 1, 1, 17) output.
+    """
+
+    def __init__(self, input_dim=288, output_dim=17, std=1.0):  # Input is 288, Output dim is 17
+        super(ObsDecoder, self).__init__()
+
+        # Adjusting kernel sizes and padding to achieve proper spatial dimensions
+        # (288, 1, 1) -> (128, 1, 9)
+        self.conv1 = nn.ConvTranspose2d(input_dim, 128, (1, 9), stride=(1, 1)).apply(initialize_weight)
+        
+        # (128, 1, 9) -> (64, 1, 9) (keeping width same but reducing channels)
+        self.conv2 = nn.ConvTranspose2d(128, 64, (1, 1)).apply(initialize_weight)
+        
+        # (64, 1, 9) -> (32, 1, 9)
+        self.conv3 = nn.ConvTranspose2d(64, 32, (1, 1)).apply(initialize_weight)
+        
+        # (32, 1, 9) -> (17, 1, 1)
+        self.conv4 = nn.ConvTranspose2d(32, output_dim, (1, 9), padding=(0, 0)).apply(initialize_weight)
+
+        self.leaky_relu = nn.LeakyReLU(0.2, inplace=True)
+
+        self.std = std
+
+    @torch.jit.script_method
+    def forward(self, x):
+        # print('decoder x1: ', x.shape)  # Expected: [32, 9, 288]
+
+        B, S, latent_dim = x.size()  # latent_dim = 288
+        x = x.view(B * S, latent_dim, 1, 1)  # Flatten sequence into batch for 2D conv
+        # print('decoder x2: ', x.shape)  # Expected: [288, 288, 1, 1]
+
+        # Pass through convolutional layers
+        x = self.leaky_relu(self.conv1(x))
+        # print('decoder x3: ', x.shape)  # Expected: [288, 128, 1, 5]
+
+        x = self.leaky_relu(self.conv2(x))
+        # print('decoder x4: ', x.shape)  # Expected: [288, 64, 1, 9]
+
+        x = self.leaky_relu(self.conv3(x))
+        # print('decoder x5: ', x.shape)  # Expected: [288, 32, 1, 9]
+
+        x = self.leaky_relu(self.conv4(x))
+        # print('decoder x6: ', x.shape)  # Expected: [288, 17, 1, 1]
+
+        # Reshaping to the desired output [32, 9, 1, 1, 17]
+        x = x.view(B, S, 1, 1, 17)  # Reshape back into the batch/sequence structure
+        # print('decoder output: ', x.shape)  # Expected: [32, 9, 1, 1, 17]
+
+        return x, torch.ones_like(x).mul_(self.std)
+
+
+class ObsEncoder(torch.jit.ScriptModule):
+    """
+    Modified Encoder for (1, 1, 17) input and (32, 9, 256) output.
+    """
+
+    def __init__(self, input_dim=1, output_dim=256):
+        super(ObsEncoder, self).__init__()
+
+        self.conv1 = nn.Conv2d(input_dim, 32, (1, 5), stride=(1, 1), padding=(0, 2)).apply(initialize_weight)
+        self.conv2 = nn.Conv2d(32, 64, (1, 5), stride=(1, 1), padding=(0, 2)).apply(initialize_weight)
+        self.conv3 = nn.Conv2d(64, 128, (1, 5), stride=(1, 1), padding=(0, 2)).apply(initialize_weight)
+        self.conv4 = nn.Conv2d(128, output_dim, (1, 17), stride=(1, 1), padding=0).apply(initialize_weight)
+
+        self.leaky_relu = nn.LeakyReLU(0.2, inplace=True)
+
+    @torch.jit.script_method
+    def forward(self, x):
+        B, S, C, H, W = x.size()
+        x = x.view(B * S, C, H, W)
+        x = self.leaky_relu(self.conv1(x))  # Output: (32, 1, 17)
+        x = self.leaky_relu(self.conv2(x))  # Output: (64, 1, 17)
+        x = self.leaky_relu(self.conv3(x))  # Output: (128, 1, 17)
+        x = self.leaky_relu(self.conv4(x))  # Output: (256, 1, 1)
+        x = x.view(B, S, -1)
+        
+        # print('encoder output: ', x.shape)
+        return x
 
 class LatentModel(torch.jit.ScriptModule):
     """
@@ -177,7 +260,7 @@ class LatentModel(torch.jit.ScriptModule):
         )
 
         # feat(t) = Encoder(x(t))
-        self.encoder = Encoder(state_shape[0], feature_dim)
+        self.encoder = Encoder(input_dim=state_shape[0], output_dim=feature_dim)
         # p(x(t) | z1(t), z2(t))
         self.decoder = Decoder(
             z1_dim + z2_dim,
@@ -233,7 +316,9 @@ class LatentModel(torch.jit.ScriptModule):
     @torch.jit.script_method
     def calculate_loss(self, state_, action_, reward_, done_):
         # Calculate the sequence of features.
+        # print(f'state: {state_.shape} action: {action_.shape} reward: {reward_.shape} done: {done_.shape}')
         feature_ = self.encoder(state_)
+        # print(f'feature: {feature_.shap/e}')
 
         # Sample from latent variable model.
         z1_mean_post_, z1_std_post_, z1_, z2_ = self.sample_posterior(feature_, action_)
@@ -259,3 +344,36 @@ class LatentModel(torch.jit.ScriptModule):
         log_likelihood_reward_ = (-0.5 * reward_noise_.pow(2) - reward_std_.log()) - 0.5 * math.log(2 * math.pi)
         loss_reward = -log_likelihood_reward_.mul_(1 - done_).mean(dim=0).sum()
         return loss_kld, loss_image, loss_reward
+
+
+class ObsLatentModel(LatentModel):
+    """
+    Stochastic latent variable model to estimate latent dynamics and the reward.
+    """
+
+    def __init__(
+        self,
+        state_shape,
+        action_shape,
+        feature_dim=256,
+        z1_dim=32,
+        z2_dim=256,
+        hidden_units=(256, 256),
+    ):
+        super().__init__(state_shape,
+                         action_shape,
+                         feature_dim,
+                         z1_dim, 
+                         z2_dim,
+                         hidden_units)
+       
+
+        # feat(t) = Encoder(x(t))
+        self.encoder = ObsEncoder(input_dim=state_shape[0], output_dim=feature_dim)
+        # p(x(t) | z1(t), z2(t))
+        self.decoder = ObsDecoder(
+            z1_dim + z2_dim,
+            state_shape[0],
+            std=np.sqrt(0.1),
+        )
+        self.apply(initialize_weight)

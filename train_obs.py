@@ -30,8 +30,9 @@ def main(args):
             domain_name=args.domain_name,
             task_name=args.task_name,
             action_repeat=args.action_repeat,
-            from_pixels=True,
-            image_size=64,
+            from_pixels=False,
+            # from_pixels=True,
+            # image_size=64,
             environment_kwargs=dict(
                 agent_path=args.agent_path
             )
@@ -51,8 +52,8 @@ def main(args):
             domain_name=args.domain_name,
             task_name=args.task_name,
             action_repeat=args.action_repeat,
-            from_pixels=True,
-            image_size=64,
+            from_pixels=False,
+            # image_size=64,
             environment_kwargs=dict(
                 agent_path=args.agent_path
             )
@@ -72,14 +73,14 @@ def main(args):
         f'slac-seed{args.seed}-{datetime.now().strftime("%Y%m%d-%H%M")}',
     )
 
-    algo = SlacAlgorithm(
+
+    algo = ObsSlacAlgorithm(
         state_shape=env.observation_space.shape,
         action_shape=env.action_space.shape,
         action_repeat=args.action_repeat,
         device=torch.device("cuda" if args.cuda else "cpu"),
         args=args
     )
-
     trainer = Trainer(
         envs=envs,
         env=env,

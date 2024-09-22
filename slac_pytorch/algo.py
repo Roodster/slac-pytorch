@@ -5,7 +5,7 @@ import torch
 from torch.optim import Adam
 
 from slac_pytorch.buffer import ReplayBuffer
-from slac_pytorch.network import GaussianPolicy, LatentModel, TwinnedQNetwork
+from slac_pytorch.network import GaussianPolicy, LatentModel, ObsLatentModel, TwinnedQNetwork
 from slac_pytorch.utils import create_feature_actions, grad_false, soft_update
 
 
@@ -216,3 +216,19 @@ class SlacAlgorithm:
         torch.save(self.latent.state_dict(), os.path.join(save_dir, "latent.pth"))
         torch.save(self.actor.state_dict(), os.path.join(save_dir, "actor.pth"))
         torch.save(self.critic.state_dict(), os.path.join(save_dir, "critic.pth"))
+
+
+class ObsSlacAlgorithm(SlacAlgorithm):
+    
+    def __init__(self,
+                 state_shape,
+                 action_shape,
+                 action_repeat,
+                 device,
+                 args):
+        super().__init__(state_shape,
+                         action_shape,
+                         action_repeat,
+                         device,
+                         args)
+        self.latent = ObsLatentModel(state_shape, action_shape, args.feature_dim, args.z1_dim, args.z2_dim, args.hidden_units).to(device)

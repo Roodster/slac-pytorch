@@ -28,11 +28,15 @@ class SlacObservation:
         self._state.append(state)
 
     def append(self, state, action):
+        # print('appending state to obs: ', state.shape)
+
         self._state.append(state)
         self._action.append(action)
+        # print("Current state: \n ", self._state)
 
     @property
     def state(self):
+        # print('CALLED STATE: \n', self._state)
         return np.array(self._state)[None, ...]
 
     @property
