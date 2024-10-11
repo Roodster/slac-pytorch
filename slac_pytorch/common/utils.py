@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 import json
+import os
 
 def load_config(config_file=None):
     assert config_file is not None, "Error: config file not found."
@@ -16,6 +17,7 @@ def parse_args(args_file="./data/configs/default.json"):
 
 def save_config(object, config_file=None):
     assert config_file is not None, "Error: config file not found."
-    with open(config_file, "w") as file:
+        
+    with open(config_file, "w+") as file:
         json.dump(object.__dict__, fp=file)
         

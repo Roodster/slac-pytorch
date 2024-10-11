@@ -42,7 +42,6 @@ class Gaussian(torch.jit.ScriptModule):
 
     @torch.jit.script_method
     def forward(self, x):
-        print('x1: ', x.shape, 'ndim: ', x.ndim)
         if x.ndim == 3:
             B, S, _ = x.size()
             x = self.net(x.view(B * S, _)).view(B, S, -1)

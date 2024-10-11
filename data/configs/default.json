@@ -4,7 +4,7 @@
   "action_repeat": 4,
   "cuda": false,
   "working_dir": "./",
-  "seed": 0,
+  "seed": 2,
   "num_steps": 1e2,
   "initial_collection_steps": 1e2,
   "initial_learning_steps": 1e2,
