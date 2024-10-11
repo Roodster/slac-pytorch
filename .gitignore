@@ -4,6 +4,7 @@
 *.ipynb
 *.pth
 /logs
+/kaggle/**
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
