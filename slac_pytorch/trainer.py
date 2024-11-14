@@ -56,6 +56,7 @@ class Trainer:
         env_test,
         algo,
         log_dir,
+        current_steps=1,
         args=None,
     ):
         assert args is not None
@@ -95,7 +96,7 @@ class Trainer:
         self.initial_learning_steps = int(args.initial_learning_steps)
         self.eval_interval = int(args.eval_interval)
         self.num_eval_episodes = int(args.eval_num_episodes)
-        self.current_step = 1
+        self.current_step = current_steps
 
     def train(self):
         # Time to start training.
