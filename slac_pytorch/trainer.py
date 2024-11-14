@@ -95,6 +95,7 @@ class Trainer:
         self.initial_learning_steps = int(args.initial_learning_steps)
         self.eval_interval = int(args.eval_interval)
         self.num_eval_episodes = int(args.eval_num_episodes)
+        self.current_step = 1
 
     def train(self):
         # Time to start training.
@@ -108,19 +109,23 @@ class Trainer:
         self.algo.buffer.reset_episode(state)
 
         # Collect trajectories using random policy.
-        bar = tqdm(range(1, self.initial_collection_steps + 1))
+        bar = tqdm(range(self.current_step, self.initial_collection_steps + 1))
         for step in bar:
             bar.set_description("Collecting trajectories using random policy.")
             t = self.algo.step(self.envs[env_id], self.ob, t, step <= self.initial_collection_steps)
 
         # Update latent variable model first so that SLAC can learn well using (learned) latent dynamics.
-        bar = tqdm(range(self.initial_learning_steps))
-        for _ in bar:
-            bar.set_description("Updating latent variable model.")
-            self.algo.update_latent(self.writer)
+        
+        
+        if self.current_step == 1:
+            bar = tqdm(range(self.initial_learning_steps))
+            for _ in bar:
+                bar.set_description("Updating latent variable model.")
+                self.algo.update_latent(self.writer)
 
         # Iterate collection, update and evaluation.
-        bar = tqdm(range(self.initial_collection_steps + 1, self.num_steps // self.action_repeat + 1))
+        start_env_steps = self.initial_collection_steps + 1 if self.current_step == 1 else self.current_step
+        bar = tqdm(range(start_env_steps, self.num_steps // self.action_repeat + 1))
         for step in bar:
             
             if t == 0:
@@ -140,9 +145,7 @@ class Trainer:
                 mean_return = self.evaluate(step_env)
                 bar.set_description(f"iter={step} mean_return={mean_return}")
                 self.algo.save_model(os.path.join(self.model_dir, f"step{step_env}"))
-
-        # Wait for logging to be finished.
-        sleep(10)
+                self.current_step = step_env
 
     def evaluate(self, step_env):
         mean_return = 0.0
