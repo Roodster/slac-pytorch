@@ -110,7 +110,7 @@ class Trainer:
         self.algo.buffer.reset_episode(state)
 
         # Collect trajectories using random policy.
-        bar = tqdm(range(self.current_step, self.initial_collection_steps + 1))
+        bar = tqdm(range(1, self.initial_collection_steps + 1))
         for step in bar:
             bar.set_description("Collecting trajectories using random policy.")
             t = self.algo.step(self.envs[env_id], self.ob, t, step <= self.initial_collection_steps)
