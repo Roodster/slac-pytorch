@@ -117,12 +117,10 @@ class Trainer:
 
         # Update latent variable model first so that SLAC can learn well using (learned) latent dynamics.
         
-        
-        if self.current_step == 1:
-            bar = tqdm(range(self.initial_learning_steps))
-            for _ in bar:
-                bar.set_description("Updating latent variable model.")
-                self.algo.update_latent(self.writer)
+        bar = tqdm(range(self.current_step, self.initial_learning_steps))
+        for _ in bar:
+            bar.set_description("Updating latent variable model.")
+            self.algo.update_latent(self.writer)
 
         # Iterate collection, update and evaluation.
         start_env_steps = self.initial_collection_steps + 1 if self.current_step == 1 else self.current_step
@@ -146,7 +144,7 @@ class Trainer:
                 mean_return = self.evaluate(step_env)
                 bar.set_description(f"iter={step} mean_return={mean_return}")
                 self.algo.save_model(os.path.join(self.model_dir, f"step{step_env}"))
-                self.current_step = step_env
+                self.current_step = step
 
     def evaluate(self, step_env):
         mean_return = 0.0
@@ -168,7 +166,7 @@ class Trainer:
         # Log to CSV.
         self.log["step"].append(step_env)
         self.log["return"].append(mean_return)
-        pd.DataFrame(self.log).to_csv(self.csv_path, index=False)
+        pd.DataFrame(self.log).to_csv(self.csv_path, mode='a', index=False)
 
         # Log to TensorBoard.
         self.writer.add_scalar("return/test", mean_return, step_env)
