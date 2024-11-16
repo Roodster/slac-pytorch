@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 import json
-import os
+import numpy as np
+from collections import deque
+
 
 def load_config(config_file=None):
     assert config_file is not None, "Error: config file not found."
@@ -21,3 +23,4 @@ def save_config(object, config_file=None):
     with open(config_file, "w+") as file:
         json.dump(object.__dict__, fp=file)
         
+    

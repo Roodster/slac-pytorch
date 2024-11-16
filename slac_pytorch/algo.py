@@ -115,7 +115,7 @@ class SlacAlgorithm:
             action = self.explore(ob)
                 
         state, reward, done, truncated, infos = env.step(action)
-        mask = False if t == env._max_episode_steps else done
+        mask = False if t == env.spec.max_episode_steps else done
         ob.append(state, action)
         self.buffer.append(action, reward, mask, state, done)
 

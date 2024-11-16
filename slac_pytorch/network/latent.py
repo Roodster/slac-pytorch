@@ -318,8 +318,6 @@ class LatentModel(torch.jit.ScriptModule):
         # Calculate the sequence of features.
         # print(f'state: {state_.shape} action: {action_.shape} reward: {reward_.shape} done: {done_.shape}')
         feature_ = self.encoder(state_)
-        # print(f'feature: {feature_.shap/e}')
-
         # Sample from latent variable model.
         z1_mean_post_, z1_std_post_, z1_, z2_ = self.sample_posterior(feature_, action_)
         z1_mean_pri_, z1_std_pri_ = self.sample_prior(action_, z2_)

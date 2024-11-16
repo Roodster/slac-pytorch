@@ -42,7 +42,9 @@ class SequenceBuffer:
     def reset_episode(self, state):
         assert not self._reset_episode
         self._reset_episode = True
+
         self.state_.append(state)
+
 
     def append(self, action, reward, done, next_state):
         assert self._reset_episode

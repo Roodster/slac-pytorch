@@ -17,3 +17,19 @@ def make_dmc(domain_name, task_name, action_repeat, visualise_reward=False, from
     )
     setattr(env, 'action_repeat', action_repeat)
     return env
+
+
+def make_gym(env, action_repeat, max_episode_steps=None, autoreset=False, render_mode='human', environment_kwargs=None ):
+    
+    
+    env = gym.make(
+        id=env,
+        autoreset=autoreset,
+        render_mode=render_mode,
+        max_episode_steps=max_episode_steps,
+        **environment_kwargs
+    )
+    
+    setattr(env, 'action_repeat', action_repeat)
+    
+    return env

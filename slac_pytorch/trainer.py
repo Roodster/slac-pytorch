@@ -64,13 +64,11 @@ class Trainer:
         self.envs = envs
         
         for env in self.envs:
-            _ = env.reset()
-        self.env = env
-        self.env.seed(args.seed)
+            _ = env.reset(seed=args.seed)
 
         # Env for evaluation.
         self.env_test = env_test
-        self.env_test.seed(2 ** 31 - args.seed)
+        self.env_test.reset(seed=2 ** 31 - args.seed)
 
         # Observations for training and evaluation.
         self.ob = SlacObservation(env.observation_space.shape, env.action_space.shape, args.num_sequences)
@@ -90,7 +88,7 @@ class Trainer:
             os.makedirs(self.model_dir)
 
         # Other parameters.
-        self.action_repeat = self.env.action_repeat
+        self.action_repeat = args.action_repeat
         self.num_steps = int(args.num_steps)
         self.initial_collection_steps = int(args.initial_collection_steps)
         self.initial_learning_steps = int(args.initial_learning_steps)
@@ -105,7 +103,7 @@ class Trainer:
         t = 0
         env_id = 0
         # Initialize the environment.
-        state = self.envs[env_id].reset()
+        state, _ = self.envs[env_id].reset()
         self.ob.reset_episode(state)
         self.algo.buffer.reset_episode(state)
 
@@ -166,7 +164,7 @@ class Trainer:
         # Log to CSV.
         self.log["step"].append(step_env)
         self.log["return"].append(mean_return)
-        pd.DataFrame(self.log).to_csv(self.csv_path, mode='a', index=False)
+        pd.DataFrame(self.log).to_csv(self.csv_path, mode='w', index=False)
 
         # Log to TensorBoard.
         self.writer.add_scalar("return/test", mean_return, step_env)

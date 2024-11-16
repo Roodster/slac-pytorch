@@ -6,11 +6,13 @@ import torch
 
 from slac_pytorch.common.xml_manager import XML
 from slac_pytorch.algo import SlacAlgorithm, ObsSlacAlgorithm
-from slac_pytorch.env import make_dmc
+from slac_pytorch.env import make_dmc, make_gym
 from slac_pytorch.trainer import Trainer
 from slac_pytorch.common.utils import parse_args, save_config
+from slac_pytorch.environments.wrappers import AntImageWrapper
 
-def main(args):
+
+def main(args, universe='gym'):
     masses = [750, 750, 1250, 1250]
     frictions = [0.5, 1.1, 0.5, 1.1]
     
@@ -26,18 +28,34 @@ def main(args):
         
         xml.modify(input_file=args.agent_path, output_file=args.agent_path ,values=values)
 
-        env = make_dmc(
-            domain_name=args.domain_name,
-            task_name=args.task_name,
-            action_repeat=args.action_repeat,
-            from_pixels=True,
-            image_size=64,
-            environment_kwargs=dict(
-                agent_path=args.agent_path
+        if args.universe == 'gym':
+            
+            env = make_gym(
+                env=args.domain_name,
+                action_repeat=args.action_repeat,
+                render_mode=args.render_mode,
+                environment_kwargs=dict(
+                    xml_file=args.agent_path
+                )
             )
-        )
+            
+            # Wrap the environment with our custom wrapper
+            env = AntImageWrapper(env, image_size=(64, 64))
+                        
+        else:
+
+            env = make_dmc(
+                domain_name=args.domain_name,
+                task_name=args.task_name,
+                action_repeat=args.action_repeat,
+                from_pixels=True,
+                image_size=64,
+                environment_kwargs=dict(
+                    agent_path=args.agent_path
+                )
+            )
         envs.append(env)
-        
+            
     for pair in pairs[-1:]:
 
         mass, friction = pair
@@ -47,16 +65,31 @@ def main(args):
         
         xml.modify(input_file=args.agent_path, output_file=args.agent_path ,values=values)
         
-        env_test = make_dmc(
-            domain_name=args.domain_name,
-            task_name=args.task_name,
-            action_repeat=args.action_repeat,
-            from_pixels=True,
-            image_size=64,
-            environment_kwargs=dict(
-                agent_path=args.agent_path
+        
+        if args.universe == 'gym':
+            env_test = make_gym(
+                env=args.domain_name,
+                action_repeat=args.action_repeat,
+                render_mode=args.render_mode,
+                environment_kwargs=dict(
+                    xml_file=args.agent_path
+                )
             )
-        )
+            # Wrap the environment with our custom wrapper
+            env_test = AntImageWrapper(env_test, image_size=(64, 64))
+            
+        else:
+        
+            env_test = make_dmc(
+                domain_name=args.domain_name,
+                task_name=args.task_name,
+                action_repeat=args.action_repeat,
+                from_pixels=True,
+                image_size=64,
+                environment_kwargs=dict(
+                    agent_path=args.agent_path
+                )
+            )
 
     parameters_dir = os.path.join(
         f"{args.working_dir}logs/parameters/",
@@ -69,8 +102,9 @@ def main(args):
     log_dir = os.path.join(
         f"{args.working_dir}logs/runs/",
         f"{args.domain_name}-{args.task_name}",
-        f'slac-seed{args.seed}-{datetime.now().strftime("%Y%m%d-%H%M")}',
+        f'slac-beta{args.beta}-seed{args.seed}',
     )
+
 
     algo = SlacAlgorithm(
         state_shape=env.observation_space.shape,
