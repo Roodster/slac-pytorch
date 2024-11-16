@@ -12,7 +12,7 @@ from slac_pytorch.common.utils import parse_args, save_config
 from slac_pytorch.environments.wrappers import AntImageWrapper
 
 
-def main(args, universe='gym'):
+def main(args):
     masses = [2.5, 2.5, 7.5, 7.5]
     frictions = [0.5, 1.5, 0.5, 1.5]
     

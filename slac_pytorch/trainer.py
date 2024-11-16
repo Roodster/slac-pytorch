@@ -148,7 +148,7 @@ class Trainer:
         mean_return = 0.0
 
         for i in range(self.num_eval_episodes):
-            state = self.env_test.reset()
+            state, _ = self.env_test.reset()
             self.ob_test.reset_episode(state)
             episode_return = 0.0
             done = False
