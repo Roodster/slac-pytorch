@@ -22,5 +22,3 @@ def save_config(object, config_file=None):
         
     with open(config_file, "w+") as file:
         json.dump(object.__dict__, fp=file)
-        
-    

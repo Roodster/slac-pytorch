@@ -13,8 +13,8 @@ from slac_pytorch.environments.wrappers import AntImageWrapper
 
 
 def main(args, universe='gym'):
-    masses = [750, 750, 1250, 1250]
-    frictions = [0.5, 1.1, 0.5, 1.1]
+    masses = [2.5, 2.5, 7.5, 7.5]
+    frictions = [0.5, 1.5, 0.5, 1.5]
     
     pairs = list(zip(masses, frictions))
     envs = []

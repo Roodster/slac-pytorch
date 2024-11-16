@@ -121,7 +121,7 @@ class SlacAlgorithm:
 
         if done:
             t = 0
-            state = env.reset()
+            state, _ = env.reset()
             ob.reset_episode(state)
             self.buffer.reset_episode(state)
 
