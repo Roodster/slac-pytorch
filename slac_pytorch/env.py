@@ -1,7 +1,7 @@
 import dmc2gym
 import gymnasium as gym
 
-gym.logger.set_level(40)
+# gym.logger.set_level(40) # remove this for last version of gym
 
 
 def make_dmc(domain_name, task_name, action_repeat, visualise_reward=False, from_pixels=True, environment_kwargs=None, image_size=64):
