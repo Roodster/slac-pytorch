@@ -121,8 +121,8 @@ class Trainer:
             self.algo.update_latent(self.writer)
 
         # Iterate collection, update and evaluation.
-        start_env_steps = self.initial_collection_steps + 1 if self.current_step == 1 else self.current_step
-        bar = tqdm(range(start_env_steps, self.num_steps // self.action_repeat + 1))
+        # start_env_steps = self.initial_collection_steps + 1 if self.current_step == 1 else self.current_step
+        bar = tqdm(range(0, self.num_steps // self.action_repeat + 1))
         for step in bar:
             
             if t == 0:
@@ -143,9 +143,12 @@ class Trainer:
                 bar.set_description(f"iter={step} mean_return={mean_return}")
                 self.algo.save_model(os.path.join(self.model_dir, f"step{step_env}"))
                 self.current_step = step
+                print("training: ", step_env)
+
 
     def evaluate(self, step_env):
         mean_return = 0.0
+        print("evaluating: ", step_env)
 
         for i in range(self.num_eval_episodes):
             state, _ = self.env_test.reset()

@@ -5,7 +5,8 @@ import torch
 from torch.optim import Adam
 
 from slac_pytorch.buffer import ReplayBuffer
-from slac_pytorch.network import GaussianPolicy, LatentModel, ObsLatentModel, TwinnedQNetwork
+from slac_pytorch.models.slac import GaussianPolicy, LatentModel, ObsLatentModel, TwinnedQNetwork
+from slac_pytorch.models.nctrl import NCTRL, NCTRL, CTDRL
 from slac_pytorch.utils import create_feature_actions, grad_false, soft_update
 
 
@@ -218,17 +219,84 @@ class SlacAlgorithm:
         torch.save(self.critic.state_dict(), os.path.join(save_dir, "critic.pth"))
 
 
-class ObsSlacAlgorithm(SlacAlgorithm):
+class NCTRLAlgorithm(SlacAlgorithm):
+    """
+    Stochactic Latent Actor-Critic(SLAC) with NCTRL framework for latent model. 
+
+    Paper: https://arxiv.org/abs/1907.00953
+    """
+
+    def __init__(
+        self,
+        state_shape,
+        action_shape,
+        action_repeat,
+        device,
+        args
+    ):
+        assert args is not None, "No configuration settings"
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        torch.cuda.manual_seed(args.seed)
+        super.__init__(state_shape=state_shape, action_shape=action_shape, action_repeat=action_repeat, device=device, args=args)
+            
+        self.latent = CTDRL(x_dim=64, z_dim=64, lags=2, n_class=4, hidden_dim=256, embedding_dim=8, lr=5e-4, beta=2.0e-3, gamma=2.0e-3)
+        
+        if len(args.latent_path) > 0:
+            self.latent.load_state_dict(torch.load(args.latent_path))
     
-    def __init__(self,
-                 state_shape,
-                 action_shape,
-                 action_repeat,
-                 device,
-                 args):
-        super().__init__(state_shape,
-                         action_shape,
-                         action_repeat,
-                         device,
-                         args)
-        self.latent = ObsLatentModel(state_shape, action_shape, args.feature_dim, args.z1_dim, args.z2_dim, args.hidden_units).to(device)
+        # Optimizers.
+        self.optim_latent = Adam(self.latent.parameters(), lr=args.lr_latent)
+        self.model_opt = torch.optim.AdamW(self.latent.net.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=0.0001)
+        self.hmm_opt = torch.optim.Adam(self.latent.hmm.parameters(), lr=1e-3, betas=(0.9, 0.999), weight_decay=0.0001)
+
+    def preprocess(self, ob):
+        state = torch.tensor(ob.state, dtype=torch.uint8, device=self.device).float().div_(255.0)
+        with torch.no_grad():
+            _, _, _, feature = self.latent.net(state).view(1, -1)
+        action = torch.tensor(ob.action, dtype=torch.float, device=self.device)
+        feature_action = torch.cat([feature, action], dim=1)
+        return feature_action
+
+
+    def update_latent(self, writer):
+        self.learning_steps_latent += 1
+        state_, action_, reward_, done_ = self.buffer.sample_latent(self.batch_size_latent)
+        loss, recon_loss, hmm_loss, kld_normal, kld_laplace = self.latent.calculate_loss(state_, action_, reward_, done_)
+
+
+        self.hmm_opt.zero_grad()
+        self.manual_backward(hmm_loss)
+        self.hmm_opt.step()
+
+        self.model_opt.zero_grad()
+        self.manual_backward(loss)
+        self.model_opt.step()
+
+        if self.learning_steps_latent % 1000 == 0:
+            writer.add_scalar("loss/kld_normal", kld_normal.item(), self.learning_steps_latent)
+            writer.add_scalar("loss/kld_laplace", kld_laplace.item(), self.learning_steps_latent)
+            writer.add_scalar("loss/kld_laplace", kld_laplace.item(), self.learning_steps_latent)
+            writer.add_scalar("loss/hmm_loss", hmm_loss.item(), self.learning_steps_latent)
+            writer.add_scalar("loss/recon_loss", recon_loss.item(), self.learning_steps_latent)
+            writer.add_scalar("loss/elbo_loss", loss.item(), self.learning_steps_latent)
+
+            # writer.add_scalar("loss/reward", loss_reward.item(), self.learning_steps_latent)
+            # writer.add_scalar("loss/image", loss_image.item(), self.learning_steps_latent)
+
+    def prepare_batch(self, state_, action_):
+        with torch.no_grad():
+            # f(1:t+1)
+            feature_ = self.latent.encoder(state_)
+            # z(1:t+1)
+            z_ = torch.cat(self.latent.sample_posterior(feature_, action_)[2:4], dim=-1)
+
+        # z(t), z(t+1)
+        z, next_z = z_[:, -2], z_[:, -1]
+        # a(t)
+        action = action_[:, -1]
+        # fa(t)=(x(1:t), a(1:t-1)), fa(t+1)=(x(2:t+1), a(2:t))
+        feature_action, next_feature_action = self.create_feature_actions(feature_, action_)
+
+        return z, next_z, action, feature_action, next_feature_action
+

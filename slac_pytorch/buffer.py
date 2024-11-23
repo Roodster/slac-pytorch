@@ -33,6 +33,8 @@ class SequenceBuffer:
         self.done_ = deque(maxlen=self.num_sequences)
 
     def reset(self):
+        print(f'reset: {self._reset_episode}')
+
         self._reset_episode = False
         self.state_.clear()
         self.action_.clear()
@@ -40,12 +42,16 @@ class SequenceBuffer:
         self.done_.clear()
 
     def reset_episode(self, state):
+        print(f'reset_episode: {self._reset_episode}')
+
         assert not self._reset_episode
         self._reset_episode = True
         self.state_.append(state)
 
 
     def append(self, action, reward, done, next_state):
+        print(f'append: {self._reset_episode}')
+
         assert self._reset_episode
         self.action_.append(action)
         self.reward_.append([reward])

@@ -12,7 +12,7 @@ from slac_pytorch.common.utils import parse_args, save_config
 from slac_pytorch.environments.wrappers import AntImageWrapper
 
 
-def main(args):
+def setup_trainer(args):
     masses = [2.5, 2.5, 7.5, 7.5]
     frictions = [0.5, 1.5, 0.5, 1.5]
     
@@ -33,6 +33,7 @@ def main(args):
             env = make_gym(
                 env=args.domain_name,
                 action_repeat=args.action_repeat,
+                max_episode_steps=args.max_episode_steps,
                 render_mode=args.render_mode,
                 environment_kwargs=dict(
                     xml_file=args.agent_path
@@ -70,6 +71,7 @@ def main(args):
             env_test = make_gym(
                 env=args.domain_name,
                 action_repeat=args.action_repeat,
+                max_episode_steps=args.max_episode_steps,
                 render_mode=args.render_mode,
                 environment_kwargs=dict(
                     xml_file=args.agent_path
@@ -122,9 +124,11 @@ def main(args):
         log_dir=log_dir,
         args=args,
     )
-    trainer.train()
+
+    return trainer
 
 
 if __name__ == "__main__":
     args = parse_args(args_file="./data/configs/default.json")
-    main(args)
+    trainer = setup_trainer(args)
+    trainer.train()
