@@ -5,7 +5,7 @@ from datetime import datetime
 import torch
 
 from slac_pytorch.common.xml_manager import XML
-from slac_pytorch.algo import SlacAlgorithm
+from slac_pytorch.algo import SlacAlgorithm, NCTRLAlgorithm
 from slac_pytorch.env import make_dmc, make_gym
 from slac_pytorch.trainer import Trainer
 from slac_pytorch.common.utils import parse_args, save_config
@@ -108,7 +108,7 @@ def setup_trainer(args):
     )
 
 
-    algo = SlacAlgorithm(
+    algo = NCTRLAlgorithm(
         state_shape=env.observation_space.shape,
         action_shape=env.action_space.shape,
         action_repeat=args.action_repeat,

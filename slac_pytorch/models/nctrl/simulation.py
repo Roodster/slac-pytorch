@@ -4,8 +4,8 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributions as D
-from .nets import MLP, BetaVAE_MLP, NPTransitionPrior, NPChangeTransitionPrior
-from .hmm import HMM
+from .nets import MLP, BetaVAE_MLP, NPTransitionPrior, NPChangeTransitionPrior, BetaVAE_CNN
+from .hmm import HMM, CartPoleHMMx, CartPoleHMMz, AntHMMz
 from .metrics.correlation import compute_mcc, compute_acc
 
 
@@ -59,16 +59,16 @@ class TDRL(pl.LightningModule):
 
         if distribution == 'bernoulli':
             recon_loss = F.binary_cross_entropy_with_logits(
-                x_recon, x, size_average=False).div(batch_size)
+                x_recon, x, reduction='sum').div(batch_size)
 
         elif distribution == 'gaussian':
             recon_loss = F.mse_loss(
-                x_recon, x, size_average=False).div(batch_size)
+                x_recon, x, reduction='sum').div(batch_size)
 
         elif distribution == 'sigmoid_gaussian':
             x_recon = F.sigmoid(x_recon)
             recon_loss = F.mse_loss(
-                x_recon, x, size_average=False).div(batch_size)
+                x_recon, x, reduction='sum').div(batch_size)
 
         return recon_loss
 
@@ -234,8 +234,11 @@ class CTDRL(pl.LightningModule):
         return D.MultivariateNormal(self.base_dist_mean, self.base_dist_var)
 
     def reconstruction_loss(self, x, x_recon):
+        print('x: ', x.shape)
+        print('x_recon" ', x_recon.shape)
         batch_size = x.shape[0]
         recon_loss = F.mse_loss(x_recon, x, size_average=False).div(batch_size)
+        print('reconloss: ', recon_loss)
         return recon_loss
 
     def training_step(self, batch, batch_idx):
@@ -355,7 +358,9 @@ class NCTRL(CTDRL):
         super().__init__(*args, **kwargs)
 
         self.hmm = HMM(n_class=self.n_class, lags=self.lags,
-                       x_dim=self.z_dim, hidden_dim=self.hidden_dim, mode=kwargs['hmm_mode'])
+                       x_dim=self.z_dim, hidden_dim=self.hidden_dim)
+        # self.hmm = HMM(n_class=self.n_class, lags=self.lags,
+                    #    x_dim=self.z_dim, hidden_dim=self.hidden_dim, mode=kwargs['hmm_mode'])
         self.automatic_optimization = False
 
     def training_step(self, batch, batch_idx):
@@ -616,3 +621,196 @@ class NCTRLz(NCTRL):
         # mcc,_,_ = compute_mcc(zt_recon, zt_true, self.correlation)
         self.validation_step_outputs.append({'loss': loss, 'recon_loss': recon_loss, 'hmm_loss': hmm_loss, 'kld_normal': kld_normal, 'kld_laplace': kld_laplace,
                                              'raw': {'z': zt_true, 'z_est': zt_recon, 'c': ct_true, 'c_est': ct_est}})
+
+
+
+class NCTRLzLatent(CTDRL):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.hmm = AntHMMz(
+            lags=2,
+            z_dim=self.z_dim,  # adjust based on your SLAC latent space
+            hidden_dim=self.hidden_dim
+        )
+        self.net = BetaVAE_CNN(z_dim=self.z_dim, hidden_dim=self.hidden_dim)
+
+    # def training_step(self, batch, batch_idx):
+
+    #     model_opt, hmm_opt = self.optimizers()
+    #     x, _, _ = batch
+    #     _, lags_and_length, _ = x.shape
+    #     # x_flat = x.view(-1, x_dim)
+
+    #     x_recon, mus, logvars, z_est = self.net(x)
+    #     E_logp_x, c_est = self.hmm(z_est.detach())
+    #     # * (self.alpha_factor**self.current_epoch) if self.current_epoch < 5 else -E_logp_x.mean() * 0.0
+    #     hmm_loss = -E_logp_x.mean()
+
+    #     hmm_opt.zero_grad()
+    #     self.manual_backward(hmm_loss)
+    #     hmm_opt.step()
+
+    #     # (batch_size, lags+length, embedding_dim)
+    #     embeddings = self.c_embeddings(c_est)
+
+    #     # recon_loss = self.reconstruction_loss(x, x_recon)
+    #     recon_loss = self.reconstruction_loss(x[:, :self.lags], x_recon[:, :self.lags]) + \
+    #         (self.reconstruction_loss(
+    #             x[:, self.lags:], x_recon[:, self.lags:]))/(lags_and_length-self.lags)
+
+    #     q_dist = D.Normal(mus, torch.exp(logvars / 2))
+    #     log_qz = q_dist.log_prob(z_est)
+
+    #     # Past KLD
+    #     p_dist = D.Normal(torch.zeros_like(
+    #         mus[:, :self.lags]), torch.ones_like(logvars[:, :self.lags]))
+    #     log_pz_normal = torch.sum(
+    #         torch.sum(p_dist.log_prob(z_est[:, :self.lags]), dim=-1), dim=-1)
+    #     log_qz_normal = torch.sum(
+    #         torch.sum(log_qz[:, :self.lags], dim=-1), dim=-1)
+    #     kld_normal = log_qz_normal - log_pz_normal
+    #     kld_normal = kld_normal.mean()
+    #     # Future KLD
+    #     log_qz_laplace = log_qz[:, self.lags:]
+    #     residuals, logabsdet = self.transition_prior(z_est, embeddings)
+    #     log_pz_laplace = torch.sum(
+    #         self.base_dist.log_prob(residuals), dim=1) + logabsdet.sum(1)
+    #     kld_laplace = (torch.sum(torch.sum(log_qz_laplace, dim=-1),
+    #                    dim=-1) - log_pz_laplace) / (lags_and_length-self.lags)
+    #     kld_laplace = kld_laplace.mean()
+
+    #     # VAE training
+    #     loss = recon_loss + self.beta * kld_normal + self.gamma * kld_laplace
+
+    #     model_opt.zero_grad()
+    #     self.manual_backward(loss)
+    #     model_opt.step()
+
+    #     self.log_dict({"train/elbo_loss": loss,
+    #                    "train/recon_loss": recon_loss,
+    #                    "train/hmm_loss": hmm_loss,
+    #                    "train/kld_normal": kld_normal,
+    #                    "train/kld_laplace": kld_laplace})
+
+    # def validation_step(self, batch, batch_idx):
+    #     x, z, c = batch
+    #     _, lags_and_length, _ = x.shape
+    #     # x_flat = x.view(-1, x_dim)
+
+    #     x_recon, mus, logvars, z_est = self.net(x)
+    #     E_logp_x, c_est = self.hmm(z_est.detach())
+    #     hmm_loss = -E_logp_x.mean()
+    #     # (batch_size, lags+length, embedding_dim)
+    #     embeddings = self.c_embeddings(c_est)
+
+    #     # recon_loss = self.reconstruction_loss(x, x_recon)
+    #     recon_loss = self.reconstruction_loss(x[:, :self.lags], x_recon[:, :self.lags]) + \
+    #         (self.reconstruction_loss(
+    #             x[:, self.lags:], x_recon[:, self.lags:]))/(lags_and_length-self.lags)
+
+    #     q_dist = D.Normal(mus, torch.exp(logvars / 2))
+    #     log_qz = q_dist.log_prob(z_est)
+
+    #     # Past KLD
+    #     p_dist = D.Normal(torch.zeros_like(
+    #         mus[:, :self.lags]), torch.ones_like(logvars[:, :self.lags]))
+    #     log_pz_normal = torch.sum(
+    #         torch.sum(p_dist.log_prob(z_est[:, :self.lags]), dim=-1), dim=-1)
+    #     log_qz_normal = torch.sum(
+    #         torch.sum(log_qz[:, :self.lags], dim=-1), dim=-1)
+    #     kld_normal = log_qz_normal - log_pz_normal
+    #     kld_normal = kld_normal.mean()
+    #     # Future KLD
+    #     log_qz_laplace = log_qz[:, self.lags:]
+    #     residuals, logabsdet = self.transition_prior(z_est, embeddings)
+    #     log_pz_laplace = torch.sum(
+    #         self.base_dist.log_prob(residuals), dim=1) + logabsdet.sum(1)
+    #     kld_laplace = (torch.sum(torch.sum(log_qz_laplace, dim=-1),
+    #                    dim=-1) - log_pz_laplace) / (lags_and_length-self.lags)
+    #     kld_laplace = kld_laplace.mean()
+
+    #     # VAE training
+    #     loss = recon_loss + self.beta * kld_normal + self.gamma * kld_laplace
+
+    #     zt_recon = mus.view(-1, self.z_dim).T.detach().cpu().numpy()
+    #     zt_true = z.view(-1, self.z_dim).T.detach().cpu().numpy()
+    #     ct_est = c_est.cpu().flatten().numpy()
+    #     ct_true = c[:, self.lags:].cpu().flatten().numpy()
+    #     # mcc,_,_ = compute_mcc(zt_recon, zt_true, self.correlation)
+    #     self.validation_step_outputs.append({'loss': loss, 'recon_loss': recon_loss, 'hmm_loss': hmm_loss, 'kld_normal': kld_normal, 'kld_laplace': kld_laplace,
+    #                                          'raw': {'z': zt_true, 'z_est': zt_recon, 'c': ct_true, 'c_est': ct_est}})
+
+    def calculate_loss(self, state_, action_, reward_, done_, lags_and_length=2):
+    
+        print('calculating loss: ')
+        z_est, mus, logvars = self.net.encode(state_)
+        print('z_est', type(z_est))
+
+        print('action_', type(action_))
+        E_logp_x, c_est = self.hmm(z_est.detach(), action_.detach().to(torch.int64))
+        # * (self.alpha_factor**self.current_epoch) if self.current_epoch < 5 else -E_logp_x.mean() * 0.0
+        hmm_loss = -E_logp_x.mean()
+
+        x_recon = self.net.decode(z=z_est)
+
+
+# (batch_size, lags+length, embedding_dim)
+        embeddings = self.c_embeddings(c_est)
+
+        # recon_loss = self.reconstruction_loss(x, x_recon)
+        recon_loss = self.reconstruction_loss(state_[:, :self.lags+1], x_recon[:, :self.lags+1]) + \
+            (self.reconstruction_loss(
+                state_[:, self.lags:-1], x_recon[:, self.lags:-1]))/(lags_and_length-self.lags-1)
+
+        q_dist = D.Normal(mus, torch.exp(logvars / 2))
+        log_qz = q_dist.log_prob(z_est)
+
+        # Past KLD
+        p_dist = D.Normal(torch.zeros_like(
+            mus[:, :self.lags]), torch.ones_like(logvars[:, :self.lags]))
+        log_pz_normal = torch.sum(
+            torch.sum(p_dist.log_prob(z_est[:, :self.lags]), dim=-1), dim=-1)
+        log_qz_normal = torch.sum(
+            torch.sum(log_qz[:, :self.lags], dim=-1), dim=-1)
+        kld_normal = log_qz_normal - log_pz_normal
+        kld_normal = kld_normal.mean()
+        # Future KLD
+        log_qz_laplace = log_qz[:, self.lags:]
+        print('z_est: ', z_est.shape)
+        print("embeddings: ", embeddings.shape)
+        residuals, logabsdet = self.transition_prior(z_est[:, :-1], embeddings)
+        log_pz_laplace = torch.sum(
+            self.base_dist.log_prob(residuals), dim=1) + logabsdet.sum(1)
+        kld_laplace = (torch.sum(torch.sum(log_qz_laplace, dim=-1),
+                       dim=-1) - log_pz_laplace) / (lags_and_length-self.lags)
+        kld_laplace = kld_laplace.mean()
+
+        # VAE training
+        # loss = recon_loss + self.beta * kld_normal + self.gamma * kld_laplac
+        loss = recon_loss + self.beta * kld_normal
+
+
+        return loss, recon_loss, hmm_loss, kld_normal, kld_laplace
+
+
+
+    def sample_prior(self, features_, actions_):
+        print('features_', features_.shape)
+        print('action_', actions_.shape)
+        """
+            1. pass features+  actions through cartpole hmmz
+            2. pass features + pred domain index to NPPrior 
+            3. return residuals 
+        
+        """
+        E_logp_x, c_est = self.hmm(features_.detach(), actions_.detach())
+
+
+        embeddings = self.c_embeddings(c_est)
+
+        residuals, logabsdet = self.transition_prior(features_[:, :-1], embeddings)
+
+        print('residuals: ', residuals.shape)
+        return residuals
+    

@@ -1,12 +1,12 @@
 import os
 
 import numpy as np
-import torch
+import torch as th
 from torch.optim import Adam
 
 from slac_pytorch.buffer import ReplayBuffer
 from slac_pytorch.models.slac import GaussianPolicy, LatentModel, TwinnedQNetwork
-from slac_pytorch.models.nctrl import NCTRL, NCTRL, CTDRL
+from slac_pytorch.models.nctrl import NCTRL, NCTRL, CTDRL, NCTRLzLatent
 from slac_pytorch.utils import create_feature_actions, grad_false, soft_update
 
 
@@ -27,8 +27,8 @@ class SlacAlgorithm:
     ):
         assert args is not None, "No configuration settings"
         np.random.seed(args.seed)
-        torch.manual_seed(args.seed)
-        torch.cuda.manual_seed(args.seed)
+        th.manual_seed(args.seed)
+        th.cuda.manual_seed(args.seed)
 
         # Replay buffer.
         self.buffer = ReplayBuffer(args.buffer_size, args.num_sequences, state_shape, action_shape, device)
@@ -37,22 +37,22 @@ class SlacAlgorithm:
         self.actor = GaussianPolicy(action_shape, args.num_sequences, args.feature_dim, args.hidden_units).to(device)
         
         if len(args.actor_path) > 0:
-            self.actor.load_state_dict(torch.load(args.actor_path))
+            self.actor.load_state_dict(th.load(args.actor_path))
             
         self.critic = TwinnedQNetwork(action_shape, args.z1_dim, args.z2_dim, args.hidden_units).to(device)
     
         if len(args.critic_path) > 0:
-            self.critic.load_state_dict(torch.load(args.critic_path))
+            self.critic.load_state_dict(th.load(args.critic_path))
             
         self.critic_target = TwinnedQNetwork(action_shape, args.z1_dim, args.z2_dim, args.hidden_units).to(device)
     
         if len(args.critic_path) > 0:
-            self.critic_target.load_state_dict(torch.load(args.critic_path))
+            self.critic_target.load_state_dict(th.load(args.critic_path))
             
         self.latent = LatentModel(state_shape, action_shape, args.feature_dim, args.z1_dim, args.z2_dim, args.hidden_units).to(device)
         
         if len(args.latent_path) > 0:
-            self.latent.load_state_dict(torch.load(args.latent_path))
+            self.latent.load_state_dict(th.load(args.latent_path))
             
         soft_update(self.critic_target, self.critic, 1.0)
         grad_false(self.critic_target)
@@ -60,8 +60,8 @@ class SlacAlgorithm:
         # Target entropy is -|A|.
         self.target_entropy = -float(action_shape[0])
         # We optimize log(alpha) because alpha is always bigger than 0.
-        self.log_alpha = torch.zeros(1, requires_grad=True, device=device)
-        with torch.no_grad():
+        self.log_alpha = th.zeros(1, requires_grad=True, device=device)
+        with th.no_grad():
             self.alpha = self.log_alpha.exp()
 
         # Optimizers.
@@ -83,27 +83,30 @@ class SlacAlgorithm:
         self.tau = args.tau
 
         # JIT compile to speed up.
-        fake_feature = torch.empty(1, args.num_sequences + 1, args.feature_dim, device=device)
-        fake_action = torch.empty(1, args.num_sequences, action_shape[0], device=device)
-        self.create_feature_actions = torch.jit.trace(create_feature_actions, (fake_feature, fake_action))
+        fake_feature = th.empty(1, args.num_sequences + 1, args.feature_dim, device=device)
+        fake_action = th.empty(1, args.num_sequences, action_shape[0], device=device)
+        self.create_feature_actions = th.jit.trace(create_feature_actions, (fake_feature, fake_action))
 
     def preprocess(self, ob):
-        state = torch.tensor(ob.state, dtype=torch.uint8, device=self.device).float().div_(255.0)
-        with torch.no_grad():
+        state = th.tensor(ob.state, dtype=th.uint8, device=self.device).float().div_(255.0)
+        with th.no_grad():
             feature = self.latent.encoder(state).view(1, -1)
-        action = torch.tensor(ob.action, dtype=torch.float, device=self.device)
-        feature_action = torch.cat([feature, action], dim=1)
+        print('feature shape: ', feature.shape)
+        action = th.tensor(ob.action, dtype=th.float, device=self.device)
+        print('action shape:', action.shape)
+        feature_action = th.cat([feature, action], dim=1)
+        print('fa', feature_action.shape)
         return feature_action
 
     def explore(self, ob):
         feature_action = self.preprocess(ob)
-        with torch.no_grad():
+        with th.no_grad():
             action = self.actor.sample(feature_action)[0]
         return action.cpu().numpy()[0]
 
     def exploit(self, ob):
         feature_action = self.preprocess(ob)
-        with torch.no_grad():
+        with th.no_grad():
             action = self.actor(feature_action)
         return action.cpu().numpy()[0]
 
@@ -131,6 +134,8 @@ class SlacAlgorithm:
     def update_latent(self, writer):
         self.learning_steps_latent += 1
         state_, action_, reward_, done_ = self.buffer.sample_latent(self.batch_size_latent)
+        print('\nupdate latent state ', state_.shape, ' action: ', action_.shape)
+
         loss_kld, loss_image, loss_reward = self.latent.calculate_loss(state_, action_, reward_, done_)
 
         self.optim_latent.zero_grad()
@@ -146,17 +151,19 @@ class SlacAlgorithm:
         self.learning_steps_sac += 1
         state_, action_, reward, done = self.buffer.sample_sac(self.batch_size_sac)
         z, next_z, action, feature_action, next_feature_action = self.prepare_batch(state_, action_)
-
+        print(f'{z.shape, next_z.shape, action.shape, feature_action.shape, next_feature_action.shape}')
         self.update_critic(z, next_z, action, next_feature_action, reward, done, writer)
         self.update_actor(z, feature_action, writer)
         soft_update(self.critic_target, self.critic, self.tau)
 
     def prepare_batch(self, state_, action_):
-        with torch.no_grad():
+        with th.no_grad():
             # f(1:t+1)
+            print('state.shape: ', state_.shape)
             feature_ = self.latent.encoder(state_)
+            print('encoded feature_', feature_.shape)
             # z(1:t+1)
-            z_ = torch.cat(self.latent.sample_posterior(feature_, action_)[2:4], dim=-1)
+            z_ = th.cat(self.latent.sample_posterior(feature_, action_)[2:4], dim=-1)
 
         # z(t), z(t+1)
         z, next_z = z_[:, -2], z_[:, -1]
@@ -169,10 +176,10 @@ class SlacAlgorithm:
 
     def update_critic(self, z, next_z, action, next_feature_action, reward, done, writer):
         curr_q1, curr_q2 = self.critic(z, action)
-        with torch.no_grad():
+        with th.no_grad():
             next_action, log_pi = self.actor.sample(next_feature_action)
             next_q1, next_q2 = self.critic_target(next_z, next_action)
-            next_q = torch.min(next_q1, next_q2) - self.alpha * log_pi
+            next_q = th.min(next_q1, next_q2) - self.alpha * log_pi
         target_q = reward + (1.0 - done) * self.gamma * next_q
         loss_critic = (curr_q1 - target_q).pow_(2).mean() + (curr_q2 - target_q).pow_(2).mean()
 
@@ -186,20 +193,20 @@ class SlacAlgorithm:
     def update_actor(self, z, feature_action, writer):
         action, log_pi = self.actor.sample(feature_action)
         q1, q2 = self.critic(z, action)
-        loss_actor = -torch.mean(torch.min(q1, q2) - self.alpha * log_pi)
+        loss_actor = -th.mean(th.min(q1, q2) - self.alpha * log_pi)
 
         self.optim_actor.zero_grad()
         loss_actor.backward(retain_graph=False)
         self.optim_actor.step()
 
-        with torch.no_grad():
+        with th.no_grad():
             entropy = -log_pi.detach().mean()
         loss_alpha = -self.log_alpha * (self.target_entropy - entropy)
 
         self.optim_alpha.zero_grad()
         loss_alpha.backward(retain_graph=False)
         self.optim_alpha.step()
-        with torch.no_grad():
+        with th.no_grad():
             self.alpha = self.log_alpha.exp()
 
         if self.learning_steps_sac % 1000 == 0:
@@ -212,11 +219,11 @@ class SlacAlgorithm:
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
         # We don't save target network to reduce workloads.
-        torch.save(self.latent.encoder.state_dict(), os.path.join(save_dir, "encoder.pth"))
-        torch.save(self.latent.decoder.state_dict(), os.path.join(save_dir, "decoder.pth"))
-        torch.save(self.latent.state_dict(), os.path.join(save_dir, "latent.pth"))
-        torch.save(self.actor.state_dict(), os.path.join(save_dir, "actor.pth"))
-        torch.save(self.critic.state_dict(), os.path.join(save_dir, "critic.pth"))
+        th.save(self.latent.encoder.state_dict(), os.path.join(save_dir, "encoder.pth"))
+        th.save(self.latent.decoder.state_dict(), os.path.join(save_dir, "decoder.pth"))
+        th.save(self.latent.state_dict(), os.path.join(save_dir, "latent.pth"))
+        th.save(self.actor.state_dict(), os.path.join(save_dir, "actor.pth"))
+        th.save(self.critic.state_dict(), os.path.join(save_dir, "critic.pth"))
 
 
 class NCTRLAlgorithm(SlacAlgorithm):
@@ -236,41 +243,44 @@ class NCTRLAlgorithm(SlacAlgorithm):
     ):
         assert args is not None, "No configuration settings"
         np.random.seed(args.seed)
-        torch.manual_seed(args.seed)
-        torch.cuda.manual_seed(args.seed)
-        super.__init__(state_shape=state_shape, action_shape=action_shape, action_repeat=action_repeat, device=device, args=args)
+        th.manual_seed(args.seed)
+        th.cuda.manual_seed(args.seed)
+        super().__init__(state_shape=state_shape, action_shape=action_shape, action_repeat=action_repeat, device=device, args=args)
             
-        self.latent = CTDRL(x_dim=64, z_dim=64, lags=2, n_class=4, hidden_dim=256, embedding_dim=8, lr=5e-4, beta=2.0e-3, gamma=2.0e-3)
+        self.latent = NCTRLzLatent(x_dim=64, z_dim=32, lags=2, n_class=4, hidden_dim=256, embedding_dim=8, lr=5e-4, beta=2.0e-3, gamma=2.0e-3)
         
         if len(args.latent_path) > 0:
-            self.latent.load_state_dict(torch.load(args.latent_path))
+            self.latent.load_state_dict(th.load(args.latent_path))
     
         # Optimizers.
         self.optim_latent = Adam(self.latent.parameters(), lr=args.lr_latent)
-        self.model_opt = torch.optim.AdamW(self.latent.net.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=0.0001)
-        self.hmm_opt = torch.optim.Adam(self.latent.hmm.parameters(), lr=1e-3, betas=(0.9, 0.999), weight_decay=0.0001)
+        self.model_opt = th.optim.AdamW(self.latent.net.parameters(), lr=5.0e-4, betas=(0.9, 0.999), weight_decay=0.0001)
+        self.hmm_opt = th.optim.Adam(self.latent.hmm.parameters(), lr=1e-3, betas=(0.9, 0.999), weight_decay=0.0001)
 
     def preprocess(self, ob):
-        state = torch.tensor(ob.state, dtype=torch.uint8, device=self.device).float().div_(255.0)
-        with torch.no_grad():
-            _, _, _, feature = self.latent.net(state).view(1, -1)
-        action = torch.tensor(ob.action, dtype=torch.float, device=self.device)
-        feature_action = torch.cat([feature, action], dim=1)
+        state = th.tensor(ob.state, dtype=th.uint8, device=self.device).float().div_(255.0)
+        with th.no_grad():
+            feature, mu, logvar = self.latent.net.encode(state)
+        
+        action = th.tensor(ob.action, dtype=th.float, device=self.device)
+        feature_action = th.cat([feature.view(1, -1), action], dim=1)
         return feature_action
 
 
     def update_latent(self, writer):
         self.learning_steps_latent += 1
         state_, action_, reward_, done_ = self.buffer.sample_latent(self.batch_size_latent)
-        loss, recon_loss, hmm_loss, kld_normal, kld_laplace = self.latent.calculate_loss(state_, action_, reward_, done_)
+        print('\nupdate latent state ', state_.shape, ' action: ', action_.shape)
 
+        loss, recon_loss, hmm_loss, kld_normal, kld_laplace = self.latent.calculate_loss(state_, action_, reward_, done_)
+        print(f'{loss, recon_loss, hmm_loss, kld_normal, kld_laplace}')
 
         self.hmm_opt.zero_grad()
-        self.manual_backward(hmm_loss)
+        hmm_loss.backward()
         self.hmm_opt.step()
 
         self.model_opt.zero_grad()
-        self.manual_backward(loss)
+        loss.backward()
         self.model_opt.step()
 
         if self.learning_steps_latent % 1000 == 0:
@@ -285,12 +295,16 @@ class NCTRLAlgorithm(SlacAlgorithm):
             # writer.add_scalar("loss/image", loss_image.item(), self.learning_steps_latent)
 
     def prepare_batch(self, state_, action_):
-        with torch.no_grad():
-            # f(1:t+1)
-            feature_ = self.latent.encoder(state_)
-            # z(1:t+1)
-            z_ = torch.cat(self.latent.sample_posterior(feature_, action_)[2:4], dim=-1)
+        print('\nprep batch state ', state_.shape, ' action: ', action_.shape)
 
+        with th.no_grad():
+            # f(1:t+1)
+            print('state_.shape ', state_.shape)
+            feature_, _ , _  = self.latent.net.encode(state_)
+            print('feature_', feature_.shape)
+            # z(1:t+1)
+            z_ = self.latent.sample_prior(feature_, action_)
+        print('z+', z_.shape)
         # z(t), z(t+1)
         z, next_z = z_[:, -2], z_[:, -1]
         # a(t)
@@ -300,3 +314,12 @@ class NCTRLAlgorithm(SlacAlgorithm):
 
         return z, next_z, action, feature_action, next_feature_action
 
+    def save_model(self, save_dir):
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        # We don't save target network to reduce workloads.
+        th.save(self.latent.net.encoder.state_dict(), os.path.join(save_dir, "encoder.pth"))
+        th.save(self.latent.net.decoder.state_dict(), os.path.join(save_dir, "decoder.pth"))
+        th.save(self.latent.state_dict(), os.path.join(save_dir, "latent.pth"))
+        th.save(self.actor.state_dict(), os.path.join(save_dir, "actor.pth"))
+        th.save(self.critic.state_dict(), os.path.join(save_dir, "critic.pth"))

@@ -255,9 +255,13 @@ class CartPoleHMMz(AbsHMM):
         
         # self.rnn = nn.LSTM(z_dim, z_dim, batch_first=True,bidirectional=True, num_layers=2)
     def forward(self, z, a):
-        batch_size, lags_and_length, _ = z.shape # batch_size, lags_and_length, z_dim
+        print(z.shape)
+        print('action: ', type(a))
+        print('action shape:', a.shape)
+
+        batch_size, sequence_length, _, _, _ = z.shape # batch_size, lags_and_length, z_dim
         
-        length = lags_and_length - self.lags
+        length = sequence_length - self.lags
         
         # z_rnn = self.rnn(z)[0]
         z_rnn = z
@@ -274,6 +278,8 @@ class CartPoleHMMz(AbsHMM):
         elif self.action_case == 1:
             # (2) use embedding to control the action
             a_emb = self.a_embeddings(a)
+            print('a_emb', a_emb.shape)
+            print('z_rnn', z.shape)
             # a_emb = a_emb[...,self.lags-1:-1,:].reshape(batch_size, length, -1)
             z_a = torch.cat([z_rnn, a_emb], dim=-1)
             z_a_H = z_a.unfold(dimension=1, size=self.lags+1, step=1).transpose(-2, -1) # batch_size, length, lags+1, z_dim
@@ -435,4 +441,103 @@ class MoSeqHMMz(AbsHMM):
         # logp_x = self.forward_log(logp_x_c)
         c_est = self.viterbi_algm(logp_x_c)
         return logp_x, c_est
+    
+
+
+class AntHMMz(AbsHMM):
+    def __init__(self, lags, z_dim, hidden_dim, action_dim=8):
+        # Set n_class to 4 to match the parameter combinations
+        super().__init__(n_class=4)
+        self.lags = 2
+        self.z_dim = z_dim
+        self.hidden_dim = hidden_dim
+        self.action_dim = action_dim
+        
+        # Increase hidden layer capacity to better distinguish between states
+        print(z_dim)
+        print(action_dim)
+        print(self.lags)
+        print((z_dim + action_dim)*self.lags)
+        self.trans = MLP(
+            input_dim=(z_dim + action_dim)*self.lags,
+            hidden_dim=hidden_dim,
+            output_dim=4*z_dim*2,  # 4 classes * z_dim * (mu, logvar)
+            num_layers=3
+        )
+        
+
+    def forward(self, z, a):
+
+        print(z.shape)
+        print('action shape:', a.shape)
+
+        print('z: ', z)
+        batch_size, sequence_length, _ = z.shape # batch_size, lags_and_length, z_dim
+        
+        length = sequence_length - self.lags - 1
+
+        # a_emb = a_emb[...,self.lags-1:-1,:].reshape(batch_size, length, -1)
+        z_a = torch.cat([z[:, :-1], a], dim=-1)
+        z_a_H = z_a.unfold(dimension=1, size=self.lags+1, step=1).transpose(-2, -1) # batch_size, length, lags+1, z_dim
+        z_a_H = z_a_H[...,:self.lags,:].reshape(batch_size, length, -1) # batch_si
+        print('zah: ', z_a_H)
+        print('zaH', z_a_H.shape)
+        print('trans' , self.trans(z_a_H).shape)
+        out = self.trans(z_a_H).reshape(batch_size, -1, self.n_class, 2 * self.z_dim)
+        print('out', out.shape)
+        print('out: ', out)
+        mus, logvars = out[...,:self.z_dim], out[..., self.z_dim:]
+        print('mus', mus.shape)
+        print(mus)
+        dist = tD.Normal(mus, torch.exp(logvars / 2))
+        
+        print('dist: ', dist)
+
+        logp_x_c = dist.log_prob(z[:, self.lags:-1,:].unsqueeze(2)).sum(-1)  # (batch_size, length, n_class)
+        p_x_H_dist = tD.Normal(torch.zeros_like(z[:, :self.lags]), torch.ones_like(z[:, :self.lags]))
+        logp_x_H = p_x_H_dist.log_prob(z[:, :self.lags]).sum(dim=[-1, -2])
+        log_alpha, log_beta, log_scalers, log_gamma, logp_x = self.forward_backward_log(logp_x_c)
+        # logp_x = self.forward_log(logp_x_c)
+        c_est = self.viterbi_algm(logp_x_c)
+        return logp_x+logp_x_H, c_est
+    
+
+        # batch_size, lags_and_length, _ = z.shape
+        # length = lags_and_length - self.lags
+        
+        # # feat based on action
+        # print(z.shape)
+
+        # print(a.shape)
+        # z_H_a = torch.cat([z[:, :-1], a], dim=-1)
+        # print('z_H_a', z_H_a.shape)
+        # out = self.trans(z_H_a).reshape(batch_size, length, self.n_class, 2 * self.hidden_dim)
+        # print('out', out.shape)
+        
+        # mus, logvars = out[...,:self.hidden_dim], out[..., self.hidden_dim:]
+        # dist = tD.Normal(mus, torch.exp(logvars / 2))
+        # logp_x_c = dist.log_prob(z[:, self.lags:].unsqueeze(2)).sum(-1)  # (batch_size, length, n_class)
+        # log_alpha, log_beta, log_scalers, log_gamma, logp_x = self.forward_backward_log(logp_x_c)
+        # c_est = self.viterbi_algm(logp_x_c)
+
+        # return logp_x, c_est
+
+
+    def analyze_states(self, c_est, params):
+        """
+        Helper method to analyze which states correspond to which parameter combinations
+        
+        Args:
+            c_est: estimated states from Viterbi
+            params: corresponding environment parameters (density, friction)
+        """
+        state_params = {}
+        for state in range(4):
+            mask = (c_est == state)
+            if mask.any():
+                state_params[state] = {
+                    'density': params[mask][:, 0].mean(),
+                    'friction': params[mask][:, 1].mean()
+                }
+        return state_params
     

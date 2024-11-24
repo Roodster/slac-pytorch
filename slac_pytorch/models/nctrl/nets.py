@@ -2,9 +2,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
-from functorch import vmap, jacfwd, grad
+from functorch import grad
 from torch.autograd.functional import jacobian
 import torch.distributions as tD
+
+from slac_pytorch.models.slac.initializer import initialize_weight
 
 
 def kaiming_init(m):
@@ -28,8 +30,12 @@ def normal_init(m, mean, std):
             m.bias.data.zero_()
 
 def reparametrize(mu, logvar):
+    print('logvar: ', logvar.shape)
     std = logvar.div(2).exp()
     eps = std.data.new(std.size()).normal_()
+
+    print('mu', mu.shape)
+    print('std: ', std.shape)
     return mu + std*eps
 
 
@@ -64,53 +70,96 @@ class View(nn.Module):
 class BetaVAE_CNN(nn.Module):
     """Model proposed in original beta-VAE paper(Higgins et al, ICLR, 2017)."""
 
-    def __init__(self, z_dim=10, nc=3, hidden_dim=256):
+    def __init__(self,input_dim=3, z_dim=10, nc=3, hidden_dim=256):
         super(BetaVAE_CNN, self).__init__()
         self.z_dim = z_dim
         self.nc = nc
         self.encoder = nn.Sequential(
-            nn.Conv2d(nc, 32, 4, 2, 1),          # B,  32, 64, 64
-            nn.BatchNorm2d(32),
-            nn.ReLU(True),
-            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32, 32, 32
-            nn.BatchNorm2d(32),
-            nn.ReLU(True),
-            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32, 16, 16
-            nn.BatchNorm2d(32),
-            nn.ReLU(True),
-            nn.Conv2d(32, 64, 4, 2, 1),          # B,  64,  8,  8
-            nn.BatchNorm2d(64),
-            nn.ReLU(True),
-            nn.Conv2d(64, 64, 4, 2, 1),          # B,  64,  4,  4
-            nn.BatchNorm2d(64),
-            nn.ReLU(True),
-            nn.Conv2d(64, hidden_dim, 4, 1),            # B, hidden_dim,  1,  1
-            nn.BatchNorm2d(hidden_dim),
-            nn.ReLU(True),
+            # (1, 1, 17) -> (32, 32, 32)
+            nn.Conv2d(input_dim, 32, 5, 2, 2),
+            nn.LeakyReLU(0.2, inplace=True),
+            # (32, 32, 32) -> (64, 16, 16)
+            nn.Conv2d(32, 64, 3, 2, 1),
+            nn.LeakyReLU(0.2, inplace=True),
+            # (64, 16, 16) -> (128, 8, 8)
+            nn.Conv2d(64, 128, 3, 2, 1),
+            nn.LeakyReLU(0.2, inplace=True),
+            # (128, 8, 8) -> (256, 4, 4)
+            nn.Conv2d(128, 256, 3, 2, 1),
+            nn.LeakyReLU(0.2, inplace=True),
+            # (256, 4, 4) -> (256, 1, 1)
+            nn.Conv2d(256, hidden_dim, 4),
+            nn.LeakyReLU(0.2, inplace=True),
             View((-1, hidden_dim*1*1)),                 # B, hidden_dim
             nn.Linear(hidden_dim, z_dim*2),             # B, z_dim*2
+
         )
+
+
+        
+        # nn.Sequential(
+        #     nn.Conv2d(nc, 32, 4, 2, 1),          # B,  32, 64, 64
+        #     nn.BatchNorm2d(32),
+        #     nn.ReLU(True),
+        #     nn.Conv2d(32, 32, 4, 2, 1),          # B,  32, 32, 32
+        #     nn.BatchNorm2d(32),
+        #     nn.ReLU(True),
+        #     nn.Conv2d(32, 32, 4, 2, 1),          # B,  32, 16, 16
+        #     nn.BatchNorm2d(32),
+        #     nn.ReLU(True),
+        #     nn.Conv2d(32, 64, 4, 2, 1),          # B,  64,  8,  8
+        #     nn.BatchNorm2d(64),
+        #     nn.ReLU(True),
+        #     nn.Conv2d(64, 64, 4, 2, 1),          # B,  64,  4,  4
+        #     nn.BatchNorm2d(64),
+        #     nn.ReLU(True),
+        #     nn.Conv2d(64, hidden_dim, 4, 1),            # B, hidden_dim,  1,  1
+        #     nn.BatchNorm2d(hidden_dim),
+        #     nn.ReLU(True),
+        #     View((-1, hidden_dim*1*1)),                 # B, hidden_dim
+        #     nn.Linear(hidden_dim, z_dim*2),             # B, z_dim*2
+        # )
         self.decoder = nn.Sequential(
             nn.Linear(z_dim, hidden_dim),               # B, hidden_dim
             View((-1, hidden_dim, 1, 1)),               # B, hidden_dim,  1,  1
             nn.ReLU(True),
-            nn.ConvTranspose2d(hidden_dim, 64, 4),      # B,  64,  4,  4
-            nn.BatchNorm2d(64),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(64, 64, 4, 2, 1), # B,  64,  8,  8
-            nn.BatchNorm2d(64),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(64, 32, 4, 2, 1), # B,  32, 16, 16
-            nn.BatchNorm2d(32),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 32, 32
-            nn.BatchNorm2d(32),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 64, 64
-            nn.BatchNorm2d(32),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(32, nc, 4, 2, 1),  # B, nc, 128, 128
-        )
+            # (32+256, 1, 1) -> (256, 4, 4)
+            nn.ConvTranspose2d(hidden_dim, 256, 4),
+            nn.LeakyReLU(0.2, inplace=True),
+            # (256, 4, 4) -> (128, 8, 8)
+            nn.ConvTranspose2d(256, 128, 3, 2, 1, 1),
+            nn.LeakyReLU(0.2, inplace=True),
+            # (128, 8, 8) -> (64, 16, 16)
+            nn.ConvTranspose2d(128, 64, 3, 2, 1, 1),
+            nn.LeakyReLU(0.2, inplace=True),
+            # (64, 16, 16) -> (32, 32, 32)
+            nn.ConvTranspose2d(64, 32, 3, 2, 1, 1),
+            nn.LeakyReLU(0.2, inplace=True),
+            # (32, 32, 32) -> (1, 1, 17)
+            nn.ConvTranspose2d(32, input_dim, 5, 2, 2, 1),
+            nn.LeakyReLU(0.2, inplace=True),
+        ).apply(initialize_weight)
+        # nn.Sequential(
+        #     nn.Linear(z_dim, hidden_dim),               # B, hidden_dim
+        #     View((-1, hidden_dim, 1, 1)),               # B, hidden_dim,  1,  1
+        #     nn.ReLU(True),
+        #     nn.ConvTranspose2d(hidden_dim, 64, 4),      # B,  64,  4,  4
+        #     nn.BatchNorm2d(64),
+        #     nn.ReLU(True),
+        #     nn.ConvTranspose2d(64, 64, 4, 2, 1), # B,  64,  8,  8
+        #     nn.BatchNorm2d(64),
+        #     nn.ReLU(True),
+        #     nn.ConvTranspose2d(64, 32, 4, 2, 1), # B,  32, 16, 16
+        #     nn.BatchNorm2d(32),
+        #     nn.ReLU(True),
+        #     nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 32, 32
+        #     nn.BatchNorm2d(32),
+        #     nn.ReLU(True),
+        #     nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 64, 64
+        #     nn.BatchNorm2d(32),
+        #     nn.ReLU(True),
+        #     nn.ConvTranspose2d(32, nc, 4, 2, 1),  # B, nc, 128, 128
+        # )
 
         self.weight_init()
 
@@ -120,10 +169,22 @@ class BetaVAE_CNN(nn.Module):
                 kaiming_init(m)
 
     def forward(self, x, return_z=True):
-        distributions = self._encode(x)
-        mu = distributions[:, :self.z_dim]
-        logvar = distributions[:, self.z_dim:]
+        B, S, C, H, W = x.size()
+        self.B = B
+        self.S = S
+        x = x.view(B * S, C, H, W)
+        x = self.encoder(x)
+        x = x.view(B, S, -1)
+        print('self.z_dim', self.z_dim)
+        print('x', x.shape)
+        mu = x[..., :self.z_dim]
+        print('x', mu.shape)
+
+        logvar = x[..., self.z_dim:]
+
         logvar = logvar - 2
+        print('x', logvar.shape)
+
         z = reparametrize(mu, logvar)
         x_recon = self._decode(z)
 
@@ -132,11 +193,32 @@ class BetaVAE_CNN(nn.Module):
         else:
             return x_recon, mu, logvar
 
-    def _encode(self, x):
-        return self.encoder(x)
+    def encode(self, x):
+        B, S, C, H, W = x.size()
+        self.B = B
+        self.S = S
+        self.C = C
+        self.H = H
+        self.W = W
+        x = x.view(B * S, C, H, W)
+        x = self.encoder(x)
+        x = x.view(B, S, -1)
 
-    def _decode(self, z):
-        return self.decoder(z)
+        mu = x[..., :self.z_dim]
+        logvar = x[..., self.z_dim:]
+        logvar = logvar - 2
+        z = reparametrize(mu, logvar)
+
+        return z, mu, logvar
+
+    def decode(self, z):   
+        print('decoder z shape: ', z.shape)   
+        x = self.decoder(z)
+        x = x.view(self.B, self.S, self.C, self.H, self.W)
+        print('decoder x.shape: ', x.shape)  
+
+        return x
+
 
 class BetaVAE_MLP(nn.Module):
     """Model proposed in original beta-VAE paper(Higgins et al, ICLR, 2017)."""
@@ -185,10 +267,10 @@ class BetaVAE_MLP(nn.Module):
         else:
             return x_recon, mu, logvar
 
-    def _encode(self, x):
+    def encode(self, x):
         return self.encoder(x)
 
-    def _decode(self, z):
+    def decode(self, z):
         return self.decoder(z)
 
 
@@ -231,8 +313,8 @@ class NPTransitionPrior(nn.Module):
                 (batch_x_lags, batch_x_t[:, i:i+1]), dim=-1)
             residual = self.gs[i](batch_inputs)  # (batch_size x length, 1)
 
-            J = jacfwd(self.gs[i])
-            data_J = vmap(J)(batch_inputs).squeeze()
+            J = torch.funcjacfwd(self.gs[i])
+            data_J = torch,vmap(J)(batch_inputs).squeeze()
             logabsdet = torch.log(torch.abs(data_J[:, -1]))
 
             sum_log_abs_det_jacobian += logabsdet
@@ -279,20 +361,24 @@ class NPChangeTransitionPrior(nn.Module):
         batch_x_lags = batch_x_lags.reshape(-1, self.lags * x_dim)
         sum_log_abs_det_jacobian = 0
         residuals = []
+        print('self.latent_size', self.latent_size)
         for i in range(self.latent_size):
             # (batch_size x length, hidden_dim + lags*x_dim + 1)
             batch_inputs = torch.cat(
                 (batch_embeddings, batch_x_lags, batch_x_t[:, :, i]), dim=-1)
             residual = self.gs[i](batch_inputs)  # (batch_size x length, 1)
 
-            J = jacfwd(self.gs[i])
-            data_J = vmap(J)(batch_inputs).squeeze()
+            J = torch.func.jacfwd(self.gs[i])
+            data_J = torch.vmap(J)(batch_inputs).squeeze()
             logabsdet = torch.log(torch.abs(data_J[:, -1]))
 
             sum_log_abs_det_jacobian += logabsdet
             residuals.append(residual)
+        print('finishid')
         residuals = torch.cat(residuals, dim=-1)
         residuals = residuals.reshape(batch_size, length, x_dim)
+        print('resid; ', residuals.shape)
+
         log_abs_det_jacobian = sum_log_abs_det_jacobian.reshape(batch_size, length)
         return residuals, log_abs_det_jacobian
 
