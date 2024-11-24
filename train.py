@@ -5,7 +5,7 @@ from datetime import datetime
 import torch
 
 from slac_pytorch.common.xml_manager import XML
-from slac_pytorch.algo import SlacAlgorithm, ObsSlacAlgorithm
+from slac_pytorch.algo import SlacAlgorithm
 from slac_pytorch.env import make_dmc, make_gym
 from slac_pytorch.trainer import Trainer
 from slac_pytorch.common.utils import parse_args, save_config

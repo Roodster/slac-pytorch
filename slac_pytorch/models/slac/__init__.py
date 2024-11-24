@@ -1,2 +1,2 @@
-from .latent import LatentModel, ObsLatentModel
+from .latent import LatentModel
 from .sac import GaussianPolicy, TwinnedQNetwork

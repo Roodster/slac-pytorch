@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-from slac_pytorch.network.initializer import initialize_weight
+from slac_pytorch.models.slac.initializer import initialize_weight
 from slac_pytorch.utils import build_mlp, calculate_kl_divergence
 
 

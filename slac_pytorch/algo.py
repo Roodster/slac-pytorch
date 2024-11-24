@@ -5,7 +5,7 @@ import torch
 from torch.optim import Adam
 
 from slac_pytorch.buffer import ReplayBuffer
-from slac_pytorch.models.slac import GaussianPolicy, LatentModel, ObsLatentModel, TwinnedQNetwork
+from slac_pytorch.models.slac import GaussianPolicy, LatentModel, TwinnedQNetwork
 from slac_pytorch.models.nctrl import NCTRL, NCTRL, CTDRL
 from slac_pytorch.utils import create_feature_actions, grad_false, soft_update
 

@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from slac_pytorch.network.initializer import initialize_weight
+from slac_pytorch.models.slac.initializer import initialize_weight
 from slac_pytorch.utils import build_mlp, reparameterize
 
 

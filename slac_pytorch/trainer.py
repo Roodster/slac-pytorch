@@ -143,12 +143,10 @@ class Trainer:
                 bar.set_description(f"iter={step} mean_return={mean_return}")
                 self.algo.save_model(os.path.join(self.model_dir, f"step{step_env}"))
                 self.current_step = step
-                print("training: ", step_env)
 
 
     def evaluate(self, step_env):
         mean_return = 0.0
-        print("evaluating: ", step_env)
 
         for i in range(self.num_eval_episodes):
             state, _ = self.env_test.reset()
@@ -158,7 +156,8 @@ class Trainer:
 
             while not done:
                 action = self.algo.exploit(self.ob_test)
-                state, reward, done, truncated, infos = self.env_test.step(action)
+                state, reward, terminal, truncated, infos = self.env_test.step(action)
+                done = terminal or truncated
                 self.ob_test.append(state, action)
                 episode_return += reward
 
