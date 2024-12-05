@@ -27,7 +27,7 @@ def make_gym(env, action_repeat, max_episode_steps=None, autoreset=False, render
         autoreset=autoreset,
         render_mode=render_mode,
         max_episode_steps=max_episode_steps,
-        **environment_kwargs
+        # **environment_kwargs
     )
     
     setattr(env, 'action_repeat', action_repeat)

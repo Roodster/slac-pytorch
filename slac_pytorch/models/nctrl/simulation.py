@@ -234,11 +234,8 @@ class CTDRL(pl.LightningModule):
         return D.MultivariateNormal(self.base_dist_mean, self.base_dist_var)
 
     def reconstruction_loss(self, x, x_recon):
-        print('x: ', x.shape)
-        print('x_recon" ', x_recon.shape)
         batch_size = x.shape[0]
         recon_loss = F.mse_loss(x_recon, x, size_average=False).div(batch_size)
-        print('reconloss: ', recon_loss)
         return recon_loss
 
     def training_step(self, batch, batch_idx):
@@ -743,11 +740,8 @@ class NCTRLzLatent(CTDRL):
 
     def calculate_loss(self, state_, action_, reward_, done_, lags_and_length=2):
     
-        print('calculating loss: ')
         z_est, mus, logvars = self.net.encode(state_)
-        print('z_est', type(z_est))
 
-        print('action_', type(action_))
         E_logp_x, c_est = self.hmm(z_est.detach(), action_.detach().to(torch.int64))
         # * (self.alpha_factor**self.current_epoch) if self.current_epoch < 5 else -E_logp_x.mean() * 0.0
         hmm_loss = -E_logp_x.mean()
@@ -777,8 +771,6 @@ class NCTRLzLatent(CTDRL):
         kld_normal = kld_normal.mean()
         # Future KLD
         log_qz_laplace = log_qz[:, self.lags:]
-        print('z_est: ', z_est.shape)
-        print("embeddings: ", embeddings.shape)
         residuals, logabsdet = self.transition_prior(z_est[:, :-1], embeddings)
         log_pz_laplace = torch.sum(
             self.base_dist.log_prob(residuals), dim=1) + logabsdet.sum(1)
@@ -796,8 +788,6 @@ class NCTRLzLatent(CTDRL):
 
 
     def sample_prior(self, features_, actions_):
-        print('features_', features_.shape)
-        print('action_', actions_.shape)
         """
             1. pass features+  actions through cartpole hmmz
             2. pass features + pred domain index to NPPrior 
@@ -811,6 +801,6 @@ class NCTRLzLatent(CTDRL):
 
         residuals, logabsdet = self.transition_prior(features_[:, :-1], embeddings)
 
-        print('residuals: ', residuals.shape)
         return residuals
     
+

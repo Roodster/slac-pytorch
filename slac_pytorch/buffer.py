@@ -113,6 +113,10 @@ class ReplayBuffer:
             self.buff.reset()
 
     def _append(self, state_, action_, reward_, done_):
+
+        if len(action_.shape) <= 1:
+            action_ = action_.reshape(-1, 1)
+
         self.state_[self._p] = state_
         self.action_[self._p].copy_(torch.as_tensor(action_, dtype=torch.float32))
         self.reward_[self._p].copy_(torch.as_tensor(reward_, dtype=torch.float32))

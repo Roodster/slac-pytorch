@@ -23,7 +23,8 @@ class SlacAlgorithm:
         action_shape,
         action_repeat,
         device,
-        args
+        args,
+        discrete=False
     ):
         assert args is not None, "No configuration settings"
         np.random.seed(args.seed)
@@ -81,7 +82,7 @@ class SlacAlgorithm:
         self.batch_size_latent = args.batch_size_latent
         self.num_sequences = args.num_sequences
         self.tau = args.tau
-
+        self.discrete = discrete
         # JIT compile to speed up.
         fake_feature = th.empty(1, args.num_sequences + 1, args.feature_dim, device=device)
         fake_action = th.empty(1, args.num_sequences, action_shape[0], device=device)
@@ -91,24 +92,29 @@ class SlacAlgorithm:
         state = th.tensor(ob.state, dtype=th.uint8, device=self.device).float().div_(255.0)
         with th.no_grad():
             feature = self.latent.encoder(state).view(1, -1)
-        print('feature shape: ', feature.shape)
         action = th.tensor(ob.action, dtype=th.float, device=self.device)
-        print('action shape:', action.shape)
         feature_action = th.cat([feature, action], dim=1)
-        print('fa', feature_action.shape)
         return feature_action
 
     def explore(self, ob):
         feature_action = self.preprocess(ob)
         with th.no_grad():
-            action = self.actor.sample(feature_action)[0]
-        return action.cpu().numpy()[0]
+            action = self.actor.sample(feature_action)[0].cpu().numpy()[0]
+
+        if self.discrete:
+            action = int(action[0] > 0.5)
+
+        return action
 
     def exploit(self, ob):
         feature_action = self.preprocess(ob)
         with th.no_grad():
-            action = self.actor(feature_action)
-        return action.cpu().numpy()[0]
+            action = self.actor(feature_action).cpu().numpy()[0]
+
+        if self.discrete:
+            action = int(action[0] > 0.5)
+
+        return action
 
     def step(self, env, ob, t, is_random):
         t += 1
@@ -134,7 +140,6 @@ class SlacAlgorithm:
     def update_latent(self, writer):
         self.learning_steps_latent += 1
         state_, action_, reward_, done_ = self.buffer.sample_latent(self.batch_size_latent)
-        print('\nupdate latent state ', state_.shape, ' action: ', action_.shape)
 
         loss_kld, loss_image, loss_reward = self.latent.calculate_loss(state_, action_, reward_, done_)
 
@@ -151,7 +156,6 @@ class SlacAlgorithm:
         self.learning_steps_sac += 1
         state_, action_, reward, done = self.buffer.sample_sac(self.batch_size_sac)
         z, next_z, action, feature_action, next_feature_action = self.prepare_batch(state_, action_)
-        print(f'{z.shape, next_z.shape, action.shape, feature_action.shape, next_feature_action.shape}')
         self.update_critic(z, next_z, action, next_feature_action, reward, done, writer)
         self.update_actor(z, feature_action, writer)
         soft_update(self.critic_target, self.critic, self.tau)
@@ -159,9 +163,7 @@ class SlacAlgorithm:
     def prepare_batch(self, state_, action_):
         with th.no_grad():
             # f(1:t+1)
-            print('state.shape: ', state_.shape)
             feature_ = self.latent.encoder(state_)
-            print('encoded feature_', feature_.shape)
             # z(1:t+1)
             z_ = th.cat(self.latent.sample_posterior(feature_, action_)[2:4], dim=-1)
 
@@ -270,10 +272,8 @@ class NCTRLAlgorithm(SlacAlgorithm):
     def update_latent(self, writer):
         self.learning_steps_latent += 1
         state_, action_, reward_, done_ = self.buffer.sample_latent(self.batch_size_latent)
-        print('\nupdate latent state ', state_.shape, ' action: ', action_.shape)
 
         loss, recon_loss, hmm_loss, kld_normal, kld_laplace = self.latent.calculate_loss(state_, action_, reward_, done_)
-        print(f'{loss, recon_loss, hmm_loss, kld_normal, kld_laplace}')
 
         self.hmm_opt.zero_grad()
         hmm_loss.backward()
@@ -295,16 +295,12 @@ class NCTRLAlgorithm(SlacAlgorithm):
             # writer.add_scalar("loss/image", loss_image.item(), self.learning_steps_latent)
 
     def prepare_batch(self, state_, action_):
-        print('\nprep batch state ', state_.shape, ' action: ', action_.shape)
 
         with th.no_grad():
             # f(1:t+1)
-            print('state_.shape ', state_.shape)
             feature_, _ , _  = self.latent.net.encode(state_)
-            print('feature_', feature_.shape)
             # z(1:t+1)
             z_ = self.latent.sample_prior(feature_, action_)
-        print('z+', z_.shape)
         # z(t), z(t+1)
         z, next_z = z_[:, -2], z_[:, -1]
         # a(t)

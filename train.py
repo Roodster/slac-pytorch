@@ -1,6 +1,7 @@
 import argparse
 import os
 from datetime import datetime
+import numpy as np
 
 import torch
 
@@ -26,7 +27,7 @@ def setup_trainer(args):
         values = dict(mass=mass, 
                       friction=friction)
         
-        xml.modify(input_file=args.agent_path, output_file=args.agent_path ,values=values)
+        # xml.modify(input_file=args.agent_path, output_file=args.agent_path ,values=values)
 
         if args.universe == 'gym':
             
@@ -64,7 +65,7 @@ def setup_trainer(args):
         values = dict(mass=mass, 
                     friction=friction)
         
-        xml.modify(input_file=args.agent_path, output_file=args.agent_path ,values=values)
+        # xml.modify(input_file=args.agent_path, output_file=args.agent_path ,values=values)
         
         
         if args.universe == 'gym':
@@ -108,9 +109,9 @@ def setup_trainer(args):
     )
 
 
-    algo = NCTRLAlgorithm(
+    algo = SlacAlgorithm(
         state_shape=env.observation_space.shape,
-        action_shape=env.action_space.shape,
+        action_shape=env.action_space.shape, # or [1] for cartpole
         action_repeat=args.action_repeat,
         device=torch.device("cuda" if args.cuda else "cpu"),
         args=args

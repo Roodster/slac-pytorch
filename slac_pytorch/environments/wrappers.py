@@ -15,7 +15,9 @@ class AntImageWrapper(gym.Wrapper):
         return self._get_image_observation(), info
 
     def step(self, action):
+
         observation, reward, terminated, truncated, info = self.env.step(action)
+
         return self._get_image_observation(), reward, terminated, truncated, info
 
     def _get_image_observation(self):
