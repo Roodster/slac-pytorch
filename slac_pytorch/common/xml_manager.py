@@ -36,5 +36,5 @@ class XML:
             elem.set('density', str(value))
             
     def modify_friction(self, tree, value):
-        for elem in tree.iterfind('default/default/geom'):
+        for elem in tree.iterfind('default/geom'):
             elem.set('friction', f'{float(value):.1f} .1 .1')

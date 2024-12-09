@@ -24,7 +24,6 @@ def make_gym(env, action_repeat, max_episode_steps=None, autoreset=False, render
     
     env = gym.make(
         id=env,
-        autoreset=autoreset,
         render_mode=render_mode,
         max_episode_steps=max_episode_steps,
         **environment_kwargs

@@ -80,6 +80,7 @@ class SlacAlgorithm:
         self.batch_size_latent = args.batch_size_latent
         self.num_sequences = args.num_sequences
         self.tau = args.tau
+        self.beta = args.beta
 
         # JIT compile to speed up.
         fake_feature = torch.empty(1, args.num_sequences + 1, args.feature_dim, device=device)
@@ -114,7 +115,10 @@ class SlacAlgorithm:
         else:
             action = self.explore(ob)
                 
-        state, reward, done, truncated, infos = env.step(action)
+        state, reward, terminated, truncated, infos = env.step(action)
+        
+        done = terminated or truncated
+        
         mask = False if t == env.spec.max_episode_steps else done
         ob.append(state, action)
         self.buffer.append(action, reward, mask, state, done)
@@ -133,7 +137,7 @@ class SlacAlgorithm:
         loss_kld, loss_image, loss_reward = self.latent.calculate_loss(state_, action_, reward_, done_)
 
         self.optim_latent.zero_grad()
-        (loss_kld + loss_image + loss_reward).backward()
+        (self.beta * loss_kld + loss_image + loss_reward).backward()
         self.optim_latent.step()
 
         if self.learning_steps_latent % 1000 == 0:

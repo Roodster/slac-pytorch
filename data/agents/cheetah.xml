@@ -6,7 +6,7 @@
     <default>
         <default class="cheetah">
             <joint limited="true" damping=".01" armature=".1" stiffness="8" type="hinge" axis="0 1 0" />
-            <geom contype="1" conaffinity="1" condim="3" friction="1.1 .1 .1" material="self" />
+            <geom contype="1" conaffinity="1" condim="3" friction="0.5 .1 .1" material="self" />
         </default>
         <default class="free">
             <joint limited="false" damping="0" armature="0" stiffness="0" />
@@ -27,8 +27,8 @@
             <joint name="rootx" type="slide" axis="1 0 0" class="free" />
             <joint name="rootz" type="slide" axis="0 0 1" class="free" />
             <joint name="rooty" type="hinge" axis="0 1 0" class="free" />
-            <geom name="torso" type="capsule" fromto="-.5 0 0 .5 0 0" size="0.046" density="1250" />
-            <geom name="head" type="capsule" pos=".6 0 .1" euler="0 50 0" size="0.046 .15" density="1250" />
+            <geom name="torso" type="capsule" fromto="-.5 0 0 .5 0 0" size="0.046" density="2.5" />
+            <geom name="head" type="capsule" pos=".6 0 .1" euler="0 50 0" size="0.046 .15" density="2.5" />
             <body name="bthigh" pos="-.5 0 0">
                 <joint name="bthigh" range="-30 60" stiffness="240" damping="6" />
                 <geom name="bthigh" type="capsule" pos=".1 0 -.13" euler="0 -218 0" size="0.046 .145" />

@@ -122,8 +122,9 @@ class Trainer:
 
         # Iterate collection, update and evaluation.
         start_env_steps = self.initial_collection_steps + 1 if self.current_step == 1 else self.current_step
-        bar = tqdm(range(start_env_steps, self.num_steps // self.action_repeat + 1))
+        bar = tqdm(range(start_env_steps, start_env_steps + self.num_steps // self.action_repeat + 1))
         for step in bar:
+
             
             if t == 0:
                 env_id = np.random.choice(list(range(len(self.envs)))) - 1
@@ -155,7 +156,8 @@ class Trainer:
 
             while not done:
                 action = self.algo.exploit(self.ob_test)
-                state, reward, done, truncated, infos = self.env_test.step(action)
+                state, reward, terminated, truncated, infos = self.env_test.step(action)
+                done = terminated or truncated
                 self.ob_test.append(state, action)
                 episode_return += reward
 
