@@ -1,0 +1,28 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+%files
+    ./../ /app
+
+%post
+    apt-get update && apt-get install -y python3 python3-pip
+    apt install -y libglfw3 libglew2.2 libgl1-mesa-glx libosmesa6
+    apt install -y libegl-dev libegl1 libegl1-mesa libegl1-mesa-dev
+    apt install -y libosmesa6-dev
+    apt install -y libglew-dev libglew2.2
+    apt-get install -y git
+    pip install -r /app/requirements.txt
+    # Add any other system dependencies here
+    
+
+%environment
+    export PYTHONPATH=/app:$PYTHONPATH
+    export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libGLEW.so.2.2:/usr/lib/x86_64-linux-gnu/libGL.so.1:/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.30
+    export MUJOCO_GL=egl 
+    export YOPENGL_PLATFORM=egl
+
+%runscript
+    python3 /app/train.py
+
+%startscript
+    python3 /app/train.py
